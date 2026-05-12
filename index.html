@@ -101,6 +101,12 @@
       align-items: center;
     }
 
+    .recovery-header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
     .recovery-header-title {
       font-weight: bold;
       color: #00d9ff;
@@ -110,6 +116,29 @@
     .recovery-header-status {
       color: #ff006e;
       animation: recoveryPulse 2s infinite;
+    }
+
+    .recovery-audio-toggle {
+      border: 1px solid rgba(0, 217, 255, 0.45);
+      background: rgba(0, 8, 20, 0.72);
+      color: #00d9ff;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 6px 10px;
+      cursor: pointer;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+    }
+
+    .recovery-audio-toggle:hover {
+      border-color: #39ff14;
+      box-shadow: 0 0 10px rgba(57, 255, 20, 0.25);
+    }
+
+    .recovery-audio-toggle.muted {
+      color: #ff6a87;
+      border-color: rgba(255, 0, 110, 0.65);
     }
 
     .recovery-terminal-output {
@@ -196,6 +225,109 @@
       animation: recoveryGlitch 0.45s linear 2;
     }
 
+    .recovery-terminal.hard-glitch {
+      animation: recoveryHardGlitch 0.14s steps(2, end) 2;
+    }
+
+    .recovery-screen-container.distort {
+      animation: recoverySignalTear 0.16s steps(2, end) 1;
+    }
+
+    .recovery-screen-container.color-shift {
+      animation: recoveryColorShift 0.24s ease-in-out 1;
+    }
+
+    .recovery-terminal-output.text-glitch .recovery-line {
+      animation: recoveryLineGlitch 0.14s steps(2, end) 1;
+    }
+
+    .recovery-terminal.soft-flicker {
+      animation: recoverySoftFlicker 0.18s steps(2, end) 1;
+    }
+
+    .recovery-power-gate {
+      position: absolute;
+      inset: 0;
+      z-index: 160;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: radial-gradient(circle at center, rgba(0, 15, 28, 0.86), rgba(0, 0, 0, 0.96));
+      transition: opacity 0.28s ease, visibility 0.28s ease;
+    }
+
+    .recovery-power-gate.hide {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .recovery-power-label {
+      color: rgba(57, 255, 20, 0.82);
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      text-shadow: 0 0 8px rgba(57, 255, 20, 0.35);
+    }
+
+    .recovery-power-btn {
+      border: 1px solid rgba(0, 217, 255, 0.62);
+      background: linear-gradient(180deg, rgba(0, 40, 78, 0.6), rgba(0, 16, 38, 0.9));
+      color: #00d9ff;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 14px 28px;
+      cursor: pointer;
+      box-shadow: 0 0 12px rgba(0, 217, 255, 0.28);
+      animation: recoveryPowerPulse 1.1s ease-in-out infinite;
+    }
+
+    .recovery-power-btn:hover {
+      border-color: #39ff14;
+      color: #39ff14;
+      box-shadow: 0 0 18px rgba(57, 255, 20, 0.34);
+    }
+
+    .recovery-threat-banner {
+      position: absolute;
+      left: 50%;
+      top: 14%;
+      transform: translateX(-50%);
+      z-index: 170;
+      padding: 7px 12px;
+      border: 1px solid rgba(255, 0, 110, 0.66);
+      background: rgba(25, 0, 12, 0.88);
+      color: #ff8da9;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      opacity: 0;
+      filter: blur(1px);
+      pointer-events: none;
+      text-shadow: 0 0 8px rgba(255, 0, 110, 0.45);
+    }
+
+    .recovery-threat-banner.show {
+      animation: recoveryThreatFlash 0.48s linear;
+    }
+
+    .recovery-blackout {
+      position: absolute;
+      inset: 0;
+      z-index: 165;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .recovery-blackout.active {
+      animation: recoveryBlackoutBurst 0.12s steps(2, end) 1;
+    }
+
     @keyframes recoveryGlowShift {
       0%, 100% { transform: translate(0, 0); }
       50% { transform: translate(30px, -30px); }
@@ -242,6 +374,62 @@
       100% { transform: translate(0, 0); filter: hue-rotate(0deg); }
     }
 
+    @keyframes recoveryHardGlitch {
+      0% { transform: translate(0, 0) skewX(0); filter: hue-rotate(0deg); }
+      20% { transform: translate(2px, -1px) skewX(2deg); filter: hue-rotate(24deg) saturate(1.15); }
+      40% { transform: translate(-2px, 1px) skewX(-2deg); filter: hue-rotate(-20deg) saturate(1.2); }
+      60% { transform: translate(1px, -2px) skewX(1deg); filter: hue-rotate(14deg); }
+      80% { transform: translate(-1px, 1px) skewX(-1deg); filter: hue-rotate(-18deg); }
+      100% { transform: translate(0, 0) skewX(0); filter: hue-rotate(0deg); }
+    }
+
+    @keyframes recoverySignalTear {
+      0% { filter: contrast(1) brightness(1); }
+      30% { filter: contrast(1.15) brightness(1.08) hue-rotate(18deg); }
+      55% { filter: contrast(0.95) brightness(0.9) hue-rotate(-12deg); }
+      100% { filter: contrast(1) brightness(1); }
+    }
+
+    @keyframes recoveryLineGlitch {
+      0% { transform: translateX(0); text-shadow: none; }
+      35% { transform: translateX(-1px); text-shadow: 1px 0 #00ffff, -1px 0 #ff006e; }
+      70% { transform: translateX(1px); text-shadow: -1px 0 #00ffff, 1px 0 #ff006e; }
+      100% { transform: translateX(0); text-shadow: none; }
+    }
+
+    @keyframes recoveryThreatFlash {
+      0% { opacity: 0; }
+      22% { opacity: 0.9; }
+      44% { opacity: 0.25; }
+      66% { opacity: 0.95; }
+      100% { opacity: 0; }
+    }
+
+    @keyframes recoveryBlackoutBurst {
+      0% { opacity: 0; }
+      30% { opacity: 0.14; }
+      65% { opacity: 0.05; }
+      100% { opacity: 0; }
+    }
+
+    @keyframes recoverySoftFlicker {
+      0%, 100% { opacity: 1; filter: none; }
+      40% { opacity: 0.88; filter: brightness(1.06); }
+      60% { opacity: 0.93; filter: brightness(0.94); }
+    }
+
+    @keyframes recoveryColorShift {
+      0% { filter: hue-rotate(0deg) saturate(1); }
+      35% { filter: hue-rotate(12deg) saturate(1.12); }
+      70% { filter: hue-rotate(-10deg) saturate(1.08); }
+      100% { filter: hue-rotate(0deg) saturate(1); }
+    }
+
+    @keyframes recoveryPowerPulse {
+      0%, 100% { box-shadow: 0 0 12px rgba(0, 217, 255, 0.28); }
+      50% { box-shadow: 0 0 24px rgba(0, 217, 255, 0.5); }
+    }
+
     @media (max-width: 768px) {
       .recovery-terminal {
         width: 98%;
@@ -262,19 +450,47 @@
         font-size: 10px;
         padding: 12px 16px;
       }
+
+      .recovery-header-right {
+        gap: 8px;
+      }
+
+      .recovery-audio-toggle {
+        font-size: 9px;
+        padding: 5px 8px;
+      }
+
+      .recovery-power-btn {
+        font-size: 12px;
+        padding: 12px 20px;
+      }
+
+      .recovery-threat-banner {
+        width: calc(100% - 28px);
+        text-align: center;
+      }
     }
   </style>
 </head>
 <body>
   <div id="recovery-terminal-overlay" aria-hidden="true">
-    <div class="recovery-screen-container">
+    <div class="recovery-screen-container" id="recovery-screen-container">
       <div class="recovery-glow-bg"></div>
       <div class="recovery-flicker"></div>
       <div class="recovery-scanlines"></div>
+      <div id="recovery-blackout" class="recovery-blackout"></div>
+      <div id="recovery-threat-banner" class="recovery-threat-banner" aria-hidden="true"></div>
+      <div id="recovery-power-gate" class="recovery-power-gate">
+        <div class="recovery-power-label">User Presence Required</div>
+        <button id="recovery-power-on" class="recovery-power-btn" type="button">Power ON</button>
+      </div>
       <div class="recovery-terminal" id="recovery-terminal">
         <div class="recovery-terminal-header">
           <span class="recovery-header-title">NEXUS NODE CONSOLE</span>
-          <span class="recovery-header-status" id="recovery-status-label">RECOVERY MODE</span>
+          <span class="recovery-header-right">
+            <button type="button" class="recovery-audio-toggle" id="recovery-audio-toggle" aria-label="Mute audio" title="Mute audio">MUTE</button>
+            <span class="recovery-header-status" id="recovery-status-label">RECOVERY MODE</span>
+          </span>
         </div>
         <div class="recovery-terminal-output" id="recovery-terminal-output"></div>
         <div class="recovery-terminal-input">
@@ -286,6 +502,7 @@
             class="recovery-input-field"
             id="recovery-command-input"
             placeholder="Enter command..."
+            disabled
             autocomplete="off"
             spellcheck="false"
           >
@@ -725,6 +942,18 @@
         ]
       };
 
+      const ANXIETY_LINES = [
+        'AI IS WATCHING',
+        'YOU ARE NOT ALONE',
+        'HE CAN SEE YOUR INPUT',
+        'YOUR SHELL IS A MIRROR',
+        'DO NOT TRUST MEMORY',
+        'THE NODE REMEMBERS YOU',
+        'SIGNAL SPOOF DETECTED',
+        'GHOST ECHO STILL PRESENT',
+        'THE TERMINAL IS LISTENING'
+      ];
+
       const i18n = {
         en: {
           placeholder: 'Enter command...',
@@ -738,6 +967,8 @@
           showUsage: 'show: use login or password',
           confirmChoices: '(y/n)',
           invalidPassword: 'ACCESS DENIED: credential imprint mismatch',
+          passwordHintSoft: 'Hint: legacy auth expects protocol + incident_sector + @ + schema.',
+          passwordHintHard: 'Critical hint: try protocol_23@11',
           invalidLogin: 'Use: login ghost (operator handle required)',
           notFound: 'command not found',
           whoamiAnon: 'operator',
@@ -781,6 +1012,8 @@
           showUsage: 'show: uzyj login albo password',
           confirmChoices: '(t/n)',
           invalidPassword: 'ODMOWA DOSTEPU: odcisk danych logowania niezgodny',
+          passwordHintSoft: 'Wskazowka: legacy auth oczekuje formatu protocol + sektor_incydentu + @ + schema.',
+          passwordHintHard: 'Wskazowka krytyczna: sprobuj protocol_23@11',
           invalidLogin: 'Uzyj: login ghost (wymagany identyfikator operatora)',
           notFound: 'nie znaleziono komendy',
           whoamiAnon: 'operator',
@@ -815,12 +1048,18 @@
       };
 
       const overlay = document.getElementById('recovery-terminal-overlay');
+      const screenContainer = document.getElementById('recovery-screen-container');
       const terminalRoot = document.getElementById('recovery-terminal');
       const output = document.getElementById('recovery-terminal-output');
       const input = document.getElementById('recovery-command-input');
       const prompt = document.getElementById('recovery-prompt');
       const statusLabel = document.getElementById('recovery-status-label');
       const flash = document.getElementById('recovery-crt-flash');
+      const powerGate = document.getElementById('recovery-power-gate');
+      const powerButton = document.getElementById('recovery-power-on');
+      const audioToggle = document.getElementById('recovery-audio-toggle');
+      const threatBanner = document.getElementById('recovery-threat-banner');
+      const blackout = document.getElementById('recovery-blackout');
 
       function readPersisted() {
         try {
@@ -846,22 +1085,204 @@
 
       const state = {
         booted: false,
+        powerOn: false,
         loggedIn: false,
+        audioEnabled: true,
         currentUser: 'operator',
         host: 'recovery-node',
         currentPath: '/mnt/node',
         language: stored && stored.language === 'pl' ? 'pl' : 'en',
         awaitingPassword: false,
+        passwordFailures: 0,
         awaitingConfirmation: false,
         confirmationAction: null,
         hintLevel: 0,
         history: [],
         historyIndex: 0,
-        bgLogTimer: null
+        bgLogTimer: null,
+        anxietyTimer: null,
+        scrambleTimer: null,
+        lastBlackoutAt: 0,
+        releaseTimers: []
       };
 
       function t() {
         return i18n[state.language];
+      }
+
+      function addPasswordFailureHint() {
+        if (state.passwordFailures === 3) {
+          addLine(t().passwordHintSoft, 'warn');
+          return;
+        }
+
+        if (state.passwordFailures === 5) {
+          addLine(t().passwordHintHard, 'warn');
+        }
+      }
+
+      function syncAudioButton() {
+        if (!audioToggle) return;
+        const enabled = !!state.audioEnabled;
+        audioToggle.textContent = enabled ? 'MUTE' : 'UNMUTE';
+        audioToggle.classList.toggle('muted', !enabled);
+        const label = enabled ? 'Mute audio' : 'Unmute audio';
+        audioToggle.setAttribute('aria-label', label);
+        audioToggle.title = label;
+      }
+
+      function emitIntroAudioStart() {
+        window.dispatchEvent(new Event('gp:intro-audio-start'));
+      }
+
+      function emitIntroAudioStop() {
+        window.dispatchEvent(new Event('gp:intro-audio-stop'));
+      }
+
+      function emitAudioRequestState() {
+        window.dispatchEvent(new Event('gp:audio-request-state'));
+      }
+
+      function emitSetAudioEnabled(enabled) {
+        window.dispatchEvent(new CustomEvent('gp:audio-set-enabled', {
+          detail: { enabled: !!enabled }
+        }));
+      }
+
+      function trackTimer(timerId) {
+        state.releaseTimers.push(timerId);
+      }
+
+      function clearTrackedTimers() {
+        state.releaseTimers.forEach((timerId) => clearTimeout(timerId));
+        state.releaseTimers = [];
+      }
+
+      function canTriggerBlackout() {
+        const now = Date.now();
+        if (now - state.lastBlackoutAt < 30000) {
+          return false;
+        }
+
+        state.lastBlackoutAt = now;
+        return true;
+      }
+
+      function glitchify(text) {
+        const glyphs = '▓░█▒▄▀■□▪▫@#$%?!/\\';
+        const phrase = ANXIETY_LINES[(Math.random() * ANXIETY_LINES.length) | 0];
+        const base = text.split('').map((ch) => {
+          if (ch === ' ' || ch === '\t') return ch;
+          if (Math.random() > 0.16) return ch;
+          return glyphs[(Math.random() * glyphs.length) | 0];
+        }).join('');
+
+        return base + ' // ' + phrase;
+      }
+
+      function showThreatBanner() {
+        if (!threatBanner) return;
+        threatBanner.textContent = ANXIETY_LINES[(Math.random() * ANXIETY_LINES.length) | 0];
+        threatBanner.classList.remove('show');
+        void threatBanner.offsetWidth;
+        threatBanner.classList.add('show');
+      }
+
+      function scrambleRandomLine() {
+        const lines = output.querySelectorAll('.recovery-line');
+        if (!lines.length) return;
+
+        const line = lines[(Math.random() * lines.length) | 0];
+        const original = line.textContent;
+        line.textContent = glitchify(original);
+
+        trackTimer(setTimeout(() => {
+          line.textContent = original;
+        }, 220 + ((Math.random() * 340) | 0)));
+      }
+
+      function anxietyPulse() {
+        if (!state.powerOn || !overlay.classList.contains('show')) return;
+
+        terminalRoot.classList.add('hard-glitch');
+        screenContainer.classList.add('distort');
+        terminalRoot.classList.add('soft-flicker');
+        if (Math.random() < 0.55) {
+          screenContainer.classList.add('color-shift');
+        }
+        if (Math.random() < 0.6) {
+          output.classList.add('text-glitch');
+        }
+
+        if (blackout && Math.random() < 0.08 && canTriggerBlackout()) {
+          blackout.classList.add('active');
+          trackTimer(setTimeout(() => blackout.classList.remove('active'), 90));
+        }
+
+        if (Math.random() < 0.34) {
+          showThreatBanner();
+        }
+
+        if (Math.random() < 0.78) {
+          scrambleRandomLine();
+          if (Math.random() < 0.34) {
+            scrambleRandomLine();
+          }
+        }
+
+        if (Math.random() < 0.1) {
+          addTransientLine('[GHOST] ' + ANXIETY_LINES[(Math.random() * ANXIETY_LINES.length) | 0], 'error', 3200);
+        }
+
+        trackTimer(setTimeout(() => terminalRoot.classList.remove('hard-glitch'), 120));
+        trackTimer(setTimeout(() => screenContainer.classList.remove('distort'), 110));
+        trackTimer(setTimeout(() => terminalRoot.classList.remove('soft-flicker'), 150));
+        trackTimer(setTimeout(() => screenContainer.classList.remove('color-shift'), 220));
+        trackTimer(setTimeout(() => output.classList.remove('text-glitch'), 120));
+      }
+
+      function scheduleAnxietyPulse() {
+        if (!state.powerOn || !overlay.classList.contains('show')) return;
+
+        const delay = 1500 + ((Math.random() * 2400) | 0);
+        state.anxietyTimer = setTimeout(() => {
+          anxietyPulse();
+          scheduleAnxietyPulse();
+        }, delay);
+      }
+
+      function startAnxietyGlitches() {
+        stopAnxietyGlitches();
+        scheduleAnxietyPulse();
+
+        state.scrambleTimer = setInterval(() => {
+          if (!state.powerOn || !overlay.classList.contains('show')) return;
+          if (Math.random() < 0.1) {
+            addTransientLine('[TRACE] ' + ANXIETY_LINES[(Math.random() * ANXIETY_LINES.length) | 0], 'warn', 3000);
+          } else if (Math.random() < 0.7) {
+            scrambleRandomLine();
+          }
+        }, 3400);
+      }
+
+      function stopAnxietyGlitches() {
+        if (state.anxietyTimer) {
+          clearTimeout(state.anxietyTimer);
+          state.anxietyTimer = null;
+        }
+
+        if (state.scrambleTimer) {
+          clearInterval(state.scrambleTimer);
+          state.scrambleTimer = null;
+        }
+
+        clearTrackedTimers();
+        terminalRoot.classList.remove('hard-glitch');
+        terminalRoot.classList.remove('soft-flicker');
+        screenContainer.classList.remove('distort');
+        screenContainer.classList.remove('color-shift');
+        output.classList.remove('text-glitch');
+        if (blackout) blackout.classList.remove('active');
       }
 
       function addLine(text, type) {
@@ -870,6 +1291,16 @@
         line.textContent = text;
         output.appendChild(line);
         output.scrollTop = output.scrollHeight;
+        return line;
+      }
+
+      function addTransientLine(text, type, ttlMs) {
+        const line = addLine(text, type);
+        trackTimer(setTimeout(() => {
+          if (line && line.parentNode) {
+            line.parentNode.removeChild(line);
+          }
+        }, ttlMs || 2800));
       }
 
       function normalizePath(raw) {
@@ -898,7 +1329,7 @@
       }
 
       function applyLanguage() {
-        input.placeholder = t().placeholder;
+        input.placeholder = state.powerOn ? t().placeholder : 'Press Power ON...';
         statusLabel.textContent = t().statusLabel;
         updatePrompt();
       }
@@ -1018,6 +1449,7 @@
 
         persistSession();
         state.loggedIn = true;
+        state.passwordFailures = 0;
         state.currentUser = 'ghost';
         state.host = 'nexus';
         state.currentPath = '/users/ghost';
@@ -1027,6 +1459,8 @@
           terminalRoot.classList.remove('glitch');
           flash.classList.remove('active');
           stopBackgroundLogs();
+          stopAnxietyGlitches();
+          emitIntroAudioStop();
           overlay.classList.remove('show');
           document.body.classList.remove('recovery-active');
           overlay.setAttribute('aria-hidden', 'true');
@@ -1140,6 +1574,7 @@
           state.host = 'recovery-node';
           state.currentPath = '/mnt/node';
           state.awaitingPassword = false;
+          state.passwordFailures = 0;
           state.awaitingConfirmation = false;
           state.confirmationAction = null;
           state.hintLevel = 0;
@@ -1202,9 +1637,6 @@
       }
 
       async function bootIntro() {
-        overlay.classList.add('show');
-        overlay.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('recovery-active');
         updatePrompt();
         applyLanguage();
 
@@ -1217,6 +1649,22 @@
         state.booted = true;
         startBackgroundLogs();
         input.focus();
+      }
+
+      async function powerOnIntro() {
+        if (state.powerOn) return;
+
+        state.powerOn = true;
+        if (powerGate) {
+          powerGate.classList.add('hide');
+        }
+
+        input.disabled = false;
+        applyLanguage();
+        emitIntroAudioStart();
+        emitAudioRequestState();
+        startAnxietyGlitches();
+        await bootIntro();
       }
 
       input.addEventListener('keydown', async (event) => {
@@ -1271,7 +1719,9 @@
         if (state.awaitingPassword) {
           addLine('************', 'info');
           if (value.trim() !== 'protocol_23@11') {
+            state.passwordFailures += 1;
             addLine(t().invalidPassword, 'error');
+            addPasswordFailureHint();
             state.awaitingPassword = false;
             return;
           }
@@ -1287,14 +1737,43 @@
         await execute(value);
       });
 
-      overlay.addEventListener('click', () => input.focus());
-      document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && overlay.classList.contains('show')) {
+      overlay.addEventListener('click', () => {
+        if (state.powerOn) {
           input.focus();
         }
       });
 
-      bootIntro();
+      window.addEventListener('gp:audio-state', (event) => {
+        state.audioEnabled = !!event.detail?.enabled;
+        syncAudioButton();
+      });
+
+      if (audioToggle) {
+        audioToggle.addEventListener('click', (event) => {
+          event.stopPropagation();
+          emitSetAudioEnabled(!state.audioEnabled);
+        });
+      }
+
+      if (powerButton) {
+        powerButton.addEventListener('click', () => {
+          powerOnIntro();
+        });
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && overlay.classList.contains('show') && state.powerOn) {
+          input.focus();
+        }
+      });
+
+      overlay.classList.add('show');
+      overlay.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('recovery-active');
+      syncAudioButton();
+      emitAudioRequestState();
+      trackTimer(setTimeout(emitAudioRequestState, 450));
+      applyLanguage();
     }());
   </script>
 </body>

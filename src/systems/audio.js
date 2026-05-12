@@ -1,6 +1,11 @@
 import { G } from '../core/state.js';
 
+const AUDIO_PREFS_KEY = 'gp_audio_enabled';
+
 const TRACK_GROUPS = {
+	intro: [
+		'assets/music/terminal.mp3',
+	],
 	menu: [
 		'assets/music/menu.mp3',
 	],
@@ -16,6 +21,7 @@ const TRACK_GROUPS = {
 };
 
 const TARGET_VOLUMES = {
+	intro: 0.58,
 	menu: 0.45,
 	calm: 0.4,
 	terminal: 0.46,
@@ -30,10 +36,25 @@ let isTransitioning = false;
 let audioInitialized = false;
 let audioUnlocked = false;
 let fadeToken = 0;
+let introAudioActive = false;
 let lastTrackPathByMode = {
+	intro: null,
 	calm: null,
 	terminal: null,
 };
+
+export function primeAudioSettings() {
+	const stored = readStoredAudioPreference();
+	if (typeof stored === 'boolean') {
+		G.audioEnabled = stored;
+		G.musicEnabled = stored;
+	} else {
+		G.audioEnabled = true;
+		G.musicEnabled = true;
+	}
+
+	emitAudioState();
+}
 
 export function initAudio() {
 	if (audioInitialized) {
@@ -41,7 +62,9 @@ export function initAudio() {
 	}
 
 	audioInitialized = true;
+	primeAudioSettings();
 	G.audio = createAudioPools();
+	registerAudioBridge();
 
 	const startAudio = () => {
 		audioUnlocked = true;
@@ -87,6 +110,7 @@ export function stopAudio() {
 export function resetAudio() {
 	stopAudio();
 	lastTrackPathByMode = {
+		intro: null,
 		calm: null,
 		terminal: null,
 	};
@@ -99,6 +123,8 @@ export function toggleMusicEnabled() {
 export function setMusicEnabled(enabled) {
 	G.audioEnabled = !!enabled;
 	G.musicEnabled = !!enabled;
+	persistAudioPreference();
+	emitAudioState();
 	const targetMode = resolveTargetMode();
 
 	if (targetMode !== desiredMode) {
@@ -109,6 +135,11 @@ export function setMusicEnabled(enabled) {
 		}
 		void transitionToMode(targetMode);
 	}
+}
+
+export function setIntroAudioActive(active) {
+	introAudioActive = !!active;
+	updateAudio();
 }
 
 function createAudioPools() {
@@ -129,6 +160,10 @@ function createAudioPools() {
 function resolveTargetMode() {
 	if (!G.audio || !audioUnlocked || !G.audioEnabled || !G.musicEnabled) {
 		return null;
+	}
+
+	if (introAudioActive) {
+		return 'intro';
 	}
 
 	if (G.menuActive) {
@@ -289,4 +324,59 @@ function stopAllTracks(resetTime) {
 			}
 		}
 	}
+}
+
+function persistAudioPreference() {
+	try {
+		localStorage.setItem(AUDIO_PREFS_KEY, G.audioEnabled ? '1' : '0');
+	} catch {
+		// Ignore storage issues.
+	}
+}
+
+function readStoredAudioPreference() {
+	try {
+		const raw = localStorage.getItem(AUDIO_PREFS_KEY);
+		if (raw === '1') {
+			return true;
+		}
+		if (raw === '0') {
+			return false;
+		}
+	} catch {
+		// Ignore storage issues.
+	}
+
+	return null;
+}
+
+function emitAudioState() {
+	window.dispatchEvent(new CustomEvent('gp:audio-state', {
+		detail: {
+			enabled: !!G.audioEnabled,
+		},
+	}));
+}
+
+function registerAudioBridge() {
+	window.addEventListener('gp:intro-audio-start', () => {
+		setIntroAudioActive(true);
+	});
+
+	window.addEventListener('gp:intro-audio-stop', () => {
+		setIntroAudioActive(false);
+	});
+
+	window.addEventListener('gp:audio-set-enabled', (event) => {
+		const enabled = event.detail?.enabled;
+		if (typeof enabled !== 'boolean') {
+			return;
+		}
+
+		setMusicEnabled(enabled);
+	});
+
+	window.addEventListener('gp:audio-request-state', () => {
+		emitAudioState();
+	});
 }

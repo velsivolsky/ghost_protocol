@@ -102,6 +102,7 @@ export function bindUI() {
 
 	bindMusicToggleButton(G.dom.musicToggle);
 	bindMusicToggleButton(G.dom.menuMusicToggle);
+	window.addEventListener('gp:audio-state', refreshMusicToggle);
 
 	refreshMusicToggle();
 	ensureHubState();

@@ -8,7 +8,7 @@ import { clearLog, bindUI, log, rebuildList, refreshHUD, syncZoneLabel } from '.
 import { spawnEntities, update } from '../systems/update.js';
 import { render } from '../systems/render.js';
 import { updateVisibility } from '../systems/visibility.js';
-import { initAudio, updateAudio, resetAudio } from '../systems/audio.js';
+import { initAudio, updateAudio, resetAudio, primeAudioSettings } from '../systems/audio.js';
 import {
   buyQuickHackCatalogItem,
   equipQuickHackInSlot,
@@ -679,6 +679,7 @@ function startSelectedRunFromMap(runId) {
 }
 
 export function boot() {
+  primeAudioSettings();
   bindUI();
   loadDataFragments();
   initAudio();
