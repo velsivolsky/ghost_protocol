@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <title>GHOST PROTOCOL</title>
+  <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+  <div id="hud">
+    <div class="hi"><span class="hl">HP</span><div class="bar"><div class="bf g" id="bhp"></div></div></div>
+    <div class="hi"><span class="hl">BW</span><div class="bar"><div class="bf y" id="bbw"></div></div></div>
+    <div class="hi"><span class="hl">ALERT</span><div class="bar"><div class="bf r" id="bal"></div></div></div>
+    <div class="hi"><span class="hl">CREDITS</span><span style="color:#00ff9f;font-size:10px" id="vcr">¥0</span></div>
+    <div class="hi"><span class="hl">ZONE</span><span style="color:#00ff9f;font-size:10px" id="vz">SECTOR-01</span></div>
+    <div class="hi"><span class="hl">STATUS</span><span id="sv">GHOST</span></div>
+    <div class="hi" id="hud-code" style="display:none;"></div>
+    <div class="hi"><span class="hl">QH</span><span style="color:#ffbe73;font-size:9px" id="qh-stock-value">O:0 M:0 N:0 D:0</span></div>
+    <button id="music-toggle" class="icon-btn" aria-label="Wlacz dzwiek" title="Wlacz dzwiek"><span id="music-icon">🔇</span></button>
+    <div id="mission">—</div>
+  </div>
+
+
+  <div id="main-menu" class="main-menu show crt-bg">
+    <div class="crt-scanlines"></div>
+    <div class="crt-rolling-scan"></div>
+    <div class="main-menu-inner">
+
+      <!-- LEFT COLUMN -->
+      <div class="menu-left-col">
+        <div class="menu-system-tag">[ SYS://INFILTRATION_OS v4.2.1 ]</div>
+        <div class="main-menu-logo">GHOST<span>PROTOCOL</span></div>
+        <div class="main-menu-sub">CYBERNETIC INFILTRATION SYSTEM<span class="menu-cursor">█</span></div>
+        <div class="menu-sys-stats">
+          <div class="menu-sys-stat"><span class="mss-label">STATUS</span><span class="mss-val ok">ONLINE</span></div>
+          <div class="menu-sys-stat"><span class="mss-label">UPLINK</span><span class="mss-val ok">ACTIVE</span></div>
+          <div class="menu-sys-stat"><span class="mss-label">THREAT LVL</span><span class="mss-val warn">ELEVATED</span></div>
+          <div class="menu-sys-stat"><span class="mss-label">ENCRYPT</span><span class="mss-val">AES-256</span></div>
+          <div class="menu-sys-stat"><span class="mss-label">ICE</span><span class="mss-val warn">HOSTILE</span></div>
+        </div>
+        <div class="menu-left-divider"></div>
+        <div class="main-menu-tools">
+          <button id="menu-music-toggle" class="icon-btn menu-audio-btn" aria-label="Wlacz dzwiek" title="Wlacz dzwiek">
+            <span id="menu-music-icon">🔇</span>
+          </button>
+          <span class="menu-audio-label">AUDIO</span>
+        </div>
+        <div class="main-menu-footer">v1.0.0 &copy; 2026 VELSKY //<br><span class="footer-glow">HACK THE PLANET</span></div>
+      </div>
+
+      <!-- RIGHT COLUMN -->
+      <div class="menu-right-col">
+        <div class="menu-tabs">
+          <button id="menu-tab-plan" class="menu-tab active" onclick="SWITCH_START_MENU_TAB('plan')">PLANUJ RUN</button>
+          <button id="menu-tab-recruit" class="menu-tab" onclick="SWITCH_START_MENU_TAB('recruit')">REKRUTACJA</button>
+          <button id="menu-tab-market" class="menu-tab" onclick="SWITCH_START_MENU_TAB('market')">MARKETPLACE</button>
+          <button id="menu-tab-databoard" class="menu-tab menu-tab-df" onclick="SWITCH_START_MENU_TAB('databoard')">DATA BOARD</button>
+          <button id="menu-tab-instructions" class="menu-tab" onclick="SWITCH_START_MENU_TAB('instructions')">INSTRUKCJE</button>
+        </div>
+        <div id="menu-panel-plan" class="menu-panel show">
+          <div class="plan-layout">
+            <div class="plan-run-col">
+              <div class="plan-col-head">DOSTĘPNE RUNY</div>
+              <div class="plan-map-section">
+                <img src="./assets/city_map.png" alt="Mapa miasta" class="menu-city-map" />
+                <div id="plan-map-points" class="plan-map-points"></div>
+              </div>
+            </div>
+            <div class="plan-detail-col">
+              <div id="plan-run-detail" class="plan-run-detail">
+                <div class="plan-detail-empty">← Wybierz run z listy</div>
+              </div>
+              <div id="menu-operator-picker" class="menu-operator-picker"></div>
+              <div class="plan-infiltrate-wrap">
+                <button id="plan-infiltrate-btn" class="neon-btn plan-infiltrate-btn" disabled>INFILTRUJ</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="menu-panel-recruit" class="menu-panel">
+          <div class="recruit-layout">
+            <div class="recruit-col">
+              <div class="recruit-section-head">EKIPA</div>
+              <div id="menu-crew-list" class="menu-crew-list"></div>
+            </div>
+            <div class="recruit-col">
+              <div class="recruit-section-head">REKRUTACJA</div>
+              <div id="menu-recruit-list" class="menu-recruit-list"></div>
+            </div>
+          </div>
+        </div>
+        <div id="menu-panel-market" class="menu-panel">
+          <div id="menu-hack-market" class="menu-hack-market"></div>
+        </div>
+        <div id="menu-panel-instructions" class="menu-panel">
+          <div class="instructions-layout">
+            <div class="instructions-col">
+              <div class="instructions-head">GAMEPLAY LOOP</div>
+              <div class="instructions-card">
+                <div class="instructions-step"><span>1</span>Wybierz run i operatora.</div>
+                <div class="instructions-step"><span>2</span>Zakradaj sie, unikaj wykrycia i zarzadzaj BW.</div>
+                <div class="instructions-step"><span>3</span>Zhakuj TERMINAL GLOWNY i przejdz do Network Breach.</div>
+                <div class="instructions-step"><span>4</span>Po przejeciu danych wracaj do wejscia i exfiltruj.</div>
+              </div>
+
+              <div class="instructions-head">HAKOWANIE TERMINALA GLOWNEGO</div>
+              <div class="instructions-card">
+                <div class="instructions-line">Musisz stac blisko terminala glownego.</div>
+                <div class="instructions-line">Po starcie kanalu nie mozesz sie ruszyc.</div>
+                <div class="instructions-line">Ruch lub odejscie przerywa postep.</div>
+                <div class="instructions-line">Po 100% uruchamia sie sekwencja Network Breach.</div>
+              </div>
+            </div>
+
+            <div class="instructions-col">
+              <div class="instructions-head">LEGENDA POL I OBIEKTOW</div>
+              <div class="legend-grid">
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#141c2a;outline:1px solid #5ab0dc18;">
+                    <span style="display:block;width:100%;height:2px;background:rgba(90,176,255,0.13)"></span>
+                  </span>
+                  <span>Podloga</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#162233;">
+                    <span style="display:block;height:3px;background:#253247;border-bottom:1px solid #56b3ff1e;"></span>
+                  </span>
+                  <span>Sciana</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#ff3a5c18;outline:1px solid #ff3a5c44;color:#ff3a5c;">◎</span>
+                  <span>Kamera</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#0b131f;">
+                    <span style="display:inline-block;width:14px;height:14px;background:#ffd700;border:0px;"></span>
+                  </span>
+                  <span>Straznik</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#0b131f;color:#00aaff;">
+                    <span style="display:inline-block;width:10px;height:10px;border-radius:50%;border:1px solid #00aaff;"></span>
+                  </span>
+                  <span>Dron</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#0d1321;">
+                    <span style="display:inline-block;width:14px;height:14px;background:#c7d2ff;color:#07090f;font-size:11px;line-height:14px;text-align:center;">⌁</span>
+                  </span>
+                  <span>Technik</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#1a0a00;outline:1px solid #ffd700;color:#ffd700;">⊕</span>
+                  <span>Terminal glowny</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#100a00;outline:1px solid #ffd70066;color:#ffd700;">□</span>
+                  <span>Terminal poboczny</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#1d2030;outline:1px solid #9ad1ff88;color:#9ad1ff;">⌗</span>
+                  <span>Panel drzwi</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#2a171d;outline:1px solid #ff3a5c;color:#ff788f;">▣</span>
+                  <span>Drzwi (zamkniete)</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#142430;outline:1px solid #00aaff;color:#8cd9ff;">▢</span>
+                  <span>Drzwi (otwarte)</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#0f1a1f;outline:1px solid #3bd6b0;color:#3bd6b0;">◌</span>
+                  <span>Safe spot</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#0f1926;outline:1px solid #7ac8ff;color:#7ac8ff;">△</span>
+                  <span>Schody w gore</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#1b1524;outline:1px solid #ffd269;color:#ffd269;">▽</span>
+                  <span>Schody w dol</span>
+                </div>
+
+                <div class="legend-item">
+                  <span class="lg-tile" style="background:#001a00;outline:1px solid #00ff9f;color:#00ff9f;">▲</span>
+                  <span>Wejscie / exfil</span>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DATA BOARD PANEL -->
+        <div id="menu-panel-databoard" class="menu-panel">
+          <div class="db-layout">
+
+            <!-- LEFT SIDEBAR: fragment list + search/filter -->
+            <div class="db-sidebar">
+              <div class="db-sidebar-head">
+                <span class="db-sidebar-title">DATA FRAGMENTS</span>
+                <span id="db-counter" class="db-counter">0 / 0</span>
+              </div>
+              <div class="db-toolbar">
+                <input id="db-search" class="db-search" type="text" placeholder="SZUKAJ..." autocomplete="off" spellcheck="false" />
+                <select id="db-filter-cat" class="db-filter-cat">
+                  <option value="">WSZYSTKIE KATEGORIE</option>
+                </select>
+              </div>
+              <div id="db-fragment-list" class="db-fragment-list"></div>
+              <div class="db-paranoia-section">
+                <div class="db-paranoia-label">
+                  <span>PARANOIA</span>
+                  <span id="db-paranoia-val">0%</span>
+                </div>
+                <div class="db-paranoia-track">
+                  <div id="db-paranoia-fill" class="db-paranoia-fill" style="width:0%"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- MAIN BOARD: draggable cards + SVG connections -->
+            <div id="db-board" class="db-board">
+              <svg id="db-connections-svg" class="db-connections-svg"></svg>
+              <div id="db-cards-layer" class="db-cards-layer"></div>
+              <div class="db-board-hint" id="db-board-hint">
+                Wybierz fragment z listy aby go przypiąć do tablicy.<br>
+                <span class="db-hint-dim">Kliknij kartę aby ją zaznaczyć. Kliknij dwie karty kolejno aby je połączyć.</span>
+              </div>
+            </div>
+
+            <!-- RIGHT DETAIL PANEL -->
+            <div id="db-detail" class="db-detail">
+              <div id="db-detail-empty" class="db-detail-empty">
+                ← Wybierz fragment<br>aby zobaczyć szczegóły
+              </div>
+              <div id="db-detail-content" class="db-detail-content" style="display:none;">
+                <div id="db-detail-id" class="db-detail-id"></div>
+                <div id="db-detail-title" class="db-detail-title"></div>
+                <div id="db-detail-prob" class="db-detail-prob"></div>
+                <div id="db-detail-meta" class="db-detail-meta"></div>
+                <div id="db-detail-body" class="db-detail-body"></div>
+                <div class="db-detail-section-head">NOTATKA OPERATORA</div>
+                <textarea id="db-detail-note" class="db-detail-note" placeholder="Twoje notatki..."></textarea>
+                <div class="db-detail-section-head">KATEGORIA</div>
+                <div id="db-detail-cat-controls" class="db-detail-cat-controls"></div>
+                <div class="db-detail-section-head">POŁĄCZENIA</div>
+                <div id="db-detail-connections" class="db-detail-connections"></div>
+                <div class="db-detail-actions">
+                  <button id="db-btn-pin" class="db-action-btn db-btn-pin">PRZYPNIJ DO TABLICY</button>
+                  <button id="db-btn-connect-mode" class="db-action-btn db-btn-connect">TRYB ŁĄCZENIA</button>
+                  <button id="db-btn-unpin" class="db-action-btn db-btn-unpin">ODEPNIJ</button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="status-vignette" class="vignette ghost"></div>
+  <div id="system-reset-warning"></div>
+
+  <div id="qh-panel">
+    <div class="qh-head">SZYBKIE HACKI</div>
+    <div class="qh-sub">Wybierz akcje zanim czas minie</div>
+    <div class="qh-timer"><div id="qh-timer-fill"></div></div>
+    <div id="qh-choices"></div>
+  </div>
+
+  <div id="nb-panel">
+    <div class="nb-head">SYSTEM: CYBER COMBAT - NETWORK BREACH</div>
+    <div class="nb-sub">Przejmij rdzen node zanim TRACE osiagnie 100%</div>
+    <div id="nb-warning" class="nb-warning"></div>
+    <div id="nb-help" class="nb-help"></div>
+    <div id="nb-stats" class="nb-stats"></div>
+    <div class="nb-grid">
+      <div class="nb-col">
+        <div class="nb-col-title">HACKI OPERATORA</div>
+        <div id="nb-actions" class="nb-actions"></div>
+      </div>
+      <div class="nb-col">
+        <div class="nb-col-title">AKTYWNE ICE</div>
+        <div id="nb-enemies" class="nb-enemies"></div>
+      </div>
+      <div class="nb-col">
+        <div class="nb-col-title">DZIENNIK SIECI</div>
+        <div id="nb-log" class="nb-log"></div>
+      </div>
+    </div>
+    <div id="nb-footer" class="nb-footer"></div>
+    <button id="nb-abort" class="nb-abort">PRZERWIJ POLACZENIE</button>
+  </div>
+
+  <!-- Fake loading screen for immersion -->
+  <div id="nb-loading-screen" class="nb-loading-screen">
+    <div class="nb-loading-content">
+      <div id="nb-loading-header" class="nb-loading-header">[ SYSTEM BOOT ]</div>
+      <div id="nb-loading-lines" class="nb-loading-lines">
+        <div class="nb-loading-line">INITIALIZING...</div>
+      </div>
+      <div class="nb-loading-bar"><div id="nb-loading-bar-fill" class="nb-loading-bar-fill"></div></div>
+    </div>
+  </div>
+
+  <canvas id="gc"></canvas>
+
+  <div id="sb">
+    <h3>// H.U.B. OPERACYJNY</h3>
+    <div id="hub-tabs" class="hub-tabs">
+      <button id="hub-tab-plan" class="hub-tab active" onclick="window.switchHubTab('plan')">PLANUJ RUN</button>
+      <button id="hub-tab-recruit" class="hub-tab" onclick="window.switchHubTab('recruit')">REKRUTACJA</button>
+    </div>
+
+    <div id="hub-plan" class="hub-section show">
+      <div class="hub-map-wrap">
+        <img src="./assets/city_map.png" alt="Mapa miasta" class="hub-city-map" />
+      </div>
+      <div id="hub-run-meta" class="hub-run-meta"></div>
+      <div id="hub-runs" class="hub-runs"></div>
+      <div class="hub-subhead">// SIEĆ LOKALNA</div>
+      <div id="tl"></div>
+      <div id="hack-upgrades-panel" class="hack-upgrades-panel" style="display:none;margin-top:10px;padding:8px;border:1px solid #00ff9f;background:#001a00;">
+        <h4 style="color:#00ff9f;font-size:11px;margin:0 0 6px 0;">HACK UPGRADES</h4>
+        <div id="hack-upgrades-list" style="font-size:8px;line-height:1.5;"></div>
+      </div>
+    </div>
+
+    <div id="hub-recruit" class="hub-section">
+      <div id="hub-crew" class="hub-crew"></div>
+      <div id="hub-contacts" class="hub-contacts"></div>
+    </div>
+  </div>
+
+  <div id="ctx">
+    <div class="ctx-title" id="ctx-title">TARGET</div>
+    <div id="ctx-btns"></div>
+  </div>
+
+  <div id="log"></div>
+
+  <div class="ov" id="ovd">
+    <h2 style="color:#ff3a5c">FLATLINED</h2>
+    <p id="dm">neural signature compromised</p>
+    <button style="border:1px solid #ff3a5c;color:#ff3a5c" onclick="RESTART()">[ REINITIALIZE ]</button>
+  </div>
+
+  <div class="ov" id="ovs">
+    <h2 style="color:#00ff9f">EXFILTRATED</h2>
+    <p>Terminal zhakowany. Dane wyeksfiltrowane.</p>
+    <p>Dotarłeś do wyjścia bez dekonspiracji.</p>
+    <div class="reward" id="reward-txt"></div>
+    <button style="border:1px solid #00ff9f;color:#00ff9f" onclick="NEXT()">[ NASTĘPNA STREFA ]</button>
+  </div>
+
+  <div class="ov" id="ovf">
+    <h2 style="color:#ffd700">DEKONSPIRACJA</h2>
+    <p>Terminal przesłał dane, ale zostałeś namierzony przy wyjściu.</p>
+    <p style="margin-top:6px;color:#ffd700">Częściowy sukces — dane utracone.</p>
+    <button style="border:1px solid #ffd700;color:#ffd700" onclick="RESTART()">[ RETRY ]</button>
+  </div>
+
+  <div id="sl"></div>
+
+  <!-- Global visual FX overlays -->
+  <div id="grain-overlay"></div>
+  <div id="terminal-stream-overlay"><div id="ts-lines"></div></div>
+  <div id="ambient-bg-overlay"></div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

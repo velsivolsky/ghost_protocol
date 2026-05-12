@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <title>GHOST PROTOCOL</title>
+  <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+  <div id="hud">
+    <div class="hi"><span class="hl">HP</span><div class="bar"><div class="bf g" id="bhp"></div></div></div>
+    <div class="hi"><span class="hl">BW</span><div class="bar"><div class="bf y" id="bbw"></div></div></div>
+    <div class="hi"><span class="hl">ALERT</span><div class="bar"><div class="bf r" id="bal"></div></div></div>
+    <div class="hi"><span class="hl">CREDITS</span><span style="color:#00ff9f;font-size:10px" id="vcr">¥0</span></div>
+    <div class="hi"><span class="hl">ZONE</span><span style="color:#00ff9f;font-size:10px" id="vz">SECTOR-01</span></div>
+    <div class="hi"><span class="hl">STATUS</span><span id="sv">GHOST</span></div>
+    <div id="mission">—</div>
+  </div>
+
+  <canvas id="gc"></canvas>
+
+  <div id="sb">
+    <h3>// SIEĆ LOKALNA</h3>
+    <div id="tl"></div>
+  </div>
+
+  <div id="ctx">
+    <div class="ctx-title" id="ctx-title">TARGET</div>
+    <div id="ctx-btns"></div>
+  </div>
+
+  <div id="log"></div>
+
+  <div class="ov" id="ovd">
+    <h2 style="color:#ff3a5c">FLATLINED</h2>
+    <p id="dm">neural signature compromised</p>
+    <button style="border:1px solid #ff3a5c;color:#ff3a5c" onclick="RESTART()">[ REINITIALIZE ]</button>
+  </div>
+
+  <div class="ov" id="ovs">
+    <h2 style="color:#00ff9f">EXFILTRATED</h2>
+    <p>Terminal zhakowany. Dane wyeksfiltrowane.</p>
+    <p>Dotarłeś do wyjścia bez dekonspiracji.</p>
+    <div class="reward" id="reward-txt"></div>
+    <button style="border:1px solid #00ff9f;color:#00ff9f" onclick="NEXT()">[ NASTĘPNA STREFA ]</button>
+  </div>
+
+  <div class="ov" id="ovf">
+    <h2 style="color:#ffd700">DEKONSPIRACJA</h2>
+    <p>Terminal przesłał dane, ale zostałeś namierzony przy wyjściu.</p>
+    <p style="margin-top:6px;color:#ffd700">Częściowy sukces — dane utracone.</p>
+    <button style="border:1px solid #ffd700;color:#ffd700" onclick="RESTART()">[ RETRY ]</button>
+  </div>
+
+  <div id="sl"></div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

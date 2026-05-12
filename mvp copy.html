@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>GHOST PROTOCOL</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#07090f;color:#00ff9f;font-family:monospace;overflow:hidden;user-select:none}
+
+/* ── HUD ── */
+#hud{position:fixed;top:0;left:0;right:0;height:36px;
+  display:flex;align-items:center;gap:14px;padding:0 12px;
+  background:#07090fee;border-bottom:1px solid #0af3;font-size:10px;z-index:20}
+.hi{display:flex;flex-direction:column;gap:1px}
+.hl{font-size:8px;color:#0af;opacity:.6;letter-spacing:.09em}
+.bar{width:76px;height:3px;background:#0af2;border-radius:2px}
+.bf{height:100%;border-radius:2px;transition:width .2s}
+.g{background:#00ff9f}.y{background:#ffd700}.r{background:#ff3a5c}
+#sv{font-size:9px;font-weight:bold;letter-spacing:.1em}
+#mission{margin-left:auto;font-size:9px;color:#0af;letter-spacing:.07em;text-align:right;line-height:1.5}
+
+/* ── CANVAS ── */
+#gc{position:fixed;top:36px;left:0;right:0;bottom:0;display:block;cursor:default}
+
+/* ── SIDEBAR ── */
+#sb{position:fixed;top:36px;right:0;bottom:0;width:150px;
+  background:#07090fee;border-left:1px solid #0af3;
+  display:flex;flex-direction:column;font-size:10px;overflow-y:auto;z-index:10}
+#sb h3{padding:5px 7px;font-size:8px;color:#0af;letter-spacing:.1em;border-bottom:1px solid #0af2;flex-shrink:0}
+.tgt{padding:3px 7px;border-bottom:1px solid #0af1;cursor:pointer}
+.tgt:hover:not(.dead){background:#0af07}
+.tgt.sel{background:#00ff9f0d;border-left:2px solid #00ff9f}
+.tgt.dead{opacity:.3;cursor:default}
+.tn{color:#0af;font-size:8px}.ts{font-size:7px;color:#0af8}
+
+/* ── CONTEXT MENU ── */
+#ctx{position:fixed;background:#07090f;border:1px solid #0af;
+  padding:4px 0;z-index:100;display:none;min-width:140px;
+  box-shadow:0 0 12px #0af3}
+#ctx .ctx-title{padding:3px 10px;font-size:8px;color:#0af7;
+  border-bottom:1px solid #0af3;letter-spacing:.1em;margin-bottom:2px}
+#ctx button{display:block;width:100%;padding:5px 10px;background:transparent;
+  border:none;color:#0af;font-family:monospace;font-size:9px;
+  cursor:pointer;text-align:left;letter-spacing:.07em;transition:background .1s}
+#ctx button:hover:not(:disabled){background:#0af11;color:#fff}
+#ctx button:disabled{opacity:.3;cursor:default}
+#ctx .sep{height:1px;background:#0af2;margin:3px 0}
+
+/* ── LOG ── */
+#log{position:fixed;bottom:8px;left:8px;font-size:9px;
+  pointer-events:none;z-index:15;display:flex;flex-direction:column;gap:2px}
+.ll{color:#0af}.ll.ok{color:#00ff9f}.ll.bad{color:#ff3a5c}.ll.w{color:#ffd700}
+
+/* ── OVERLAYS ── */
+.ov{position:fixed;inset:0;background:#07090ff8;display:none;
+  flex-direction:column;align-items:center;justify-content:center;z-index:80}
+.ov.show{display:flex}
+.ov h2{font-size:1.4rem;letter-spacing:.2em;margin-bottom:10px;text-shadow:0 0 20px currentColor}
+.ov p{font-size:10px;color:#0af;letter-spacing:.09em;margin:3px 0;max-width:400px;text-align:center}
+.ov button{margin-top:16px;padding:7px 22px;background:transparent;
+  font-family:monospace;font-size:11px;letter-spacing:.12em;cursor:pointer}
+
+/* ── SUCCESS SCREEN ── */
+#ovs .reward{margin-top:14px;padding:10px 20px;border:1px solid #ffd7003a;
+  background:#ffd70008;font-size:9px;color:#ffd700;line-height:1.8;text-align:left}
+
+/* ── BANDING ── */
+#sl{position:fixed;inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.05) 2px,rgba(0,0,0,.05) 4px);
+  pointer-events:none;z-index:99}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="hi"><span class="hl">HP</span><div class="bar"><div class="bf g" id="bhp"></div></div></div>
+  <div class="hi"><span class="hl">BW</span><div class="bar"><div class="bf y" id="bbw"></div></div></div>
+  <div class="hi"><span class="hl">ALERT</span><div class="bar"><div class="bf r" id="bal"></div></div></div>
+  <div class="hi"><span class="hl">CREDITS</span><span style="color:#00ff9f;font-size:10px" id="vcr">¥0</span></div>
+  <div class="hi"><span class="hl">ZONE</span><span style="color:#00ff9f;font-size:10px" id="vz">SECTOR-01</span></div>
+  <div class="hi"><span class="hl">STATUS</span><span id="sv">GHOST</span></div>
+  <div id="mission">—</div>
+</div>
+
+<canvas id="gc"></canvas>
+
+<div id="sb">
+  <h3>// SIEĆ LOKALNA</h3>
+  <div id="tl"></div>
+</div>
+
+<div id="ctx">
+  <div class="ctx-title" id="ctx-title">TARGET</div>
+  <div id="ctx-btns"></div>
+</div>
+
+<div id="log"></div>
+
+<!-- death -->
+<div class="ov" id="ovd">
+  <h2 style="color:#ff3a5c">FLATLINED</h2>
+  <p id="dm">neural signature compromised</p>
+  <button style="border:1px solid #ff3a5c;color:#ff3a5c" onclick="RESTART()">[ REINITIALIZE ]</button>
+</div>
+
+<!-- success -->
+<div class="ov" id="ovs">
+  <h2 style="color:#00ff9f">EXFILTRATED</h2>
+  <p>Terminal zhakowany. Dane wyeksfiltrowane.</p>
+  <p>Dotarłeś do wyjścia bez dekonspiracji.</p>
+  <div class="reward" id="reward-txt"></div>
+  <button style="border:1px solid #00ff9f;color:#00ff9f" onclick="NEXT()">[ NASTĘPNA STREFA ]</button>
+</div>
+
+<!-- caught — failed exit -->
+<div class="ov" id="ovf">
+  <h2 style="color:#ffd700">DEKONSPIRACJA</h2>
+  <p>Terminal przesłał dane, ale zostałeś namierzony przy wyjściu.</p>
+  <p style="margin-top:6px;color:#ffd700">Częściowy sukces — dane utracone.</p>
+  <button style="border:1px solid #ffd700;color:#ffd700" onclick="RESTART()">[ RETRY ]</button>
+</div>
+
+<div id="sl"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  GHOST PROTOCOL — REDESIGNED CORE LOOP
+//
+//  FLOW:
+//   1. Gracz wchodzi przez ENTRANCE (▲)
+//   2. Infiltruje — hackuje terminale poboczne (kamery, strażnicy)
+//   3. Musi dotrzeć do MAIN TERMINAL (⊛) i go zhakować (kanał)
+//   4. Po hacku wraca do wejścia ENTRANCE
+//   5. Wyjście przy niskim alerce = sukces / przy wysokim = dekonspiracja
+//
+//  HACKOWANIE: klik na obiekt → kontekstowe menu opcji
+// ════════════════════════════════════════════════════════════
+
+var T=18, MW=38, MH=28, HR=4.5, SPD=3.2;
+var cvs, ctx, W, H;
+var G=null;
+var KEYS={};
+
+function dst(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function clamp(v,lo,hi){return Math.min(hi===undefined?100:hi,Math.max(lo===undefined?0:lo,v))}
+function canWalk(tiles,x,y){
+  var tx=x|0,ty=y|0;
+  if(tx<0||ty<0||tx>=MW||ty>=MH) return false;
+  var t=tiles[ty][tx];
+  return t===0||t===2||t===3||t===5; // floor, entrance, exit, side-terminal-floor
+}
+
+// ── TILE TYPES ───────────────────────────────────────────
+// 0=floor  1=wall  2=entrance(▲)  3=exit-used(after hack)
+// 4=main-terminal(⊛)  5=side-terminal(□)
+
+function makeMap(){
+  var tiles=[];
+  for(var y=0;y<MH;y++){var r=[];for(var x=0;x<MW;x++)r.push(1);tiles.push(r);}
+
+  var rooms=[];
+  // spawn room — top-left corner guaranteed
+  rooms.push({x:1,y:1,w:7,h:6});
+  // random rooms
+  for(var a=0;a<80&&rooms.length<12;a++){
+    var w=4+(Math.random()*5|0), h=3+(Math.random()*4|0);
+    var rx=1+(Math.random()*(MW-w-2)|0), ry=1+(Math.random()*(MH-h-2)|0);
+    rooms.push({x:rx,y:ry,w:w,h:h});
+  }
+  // carve
+  for(var i=0;i<rooms.length;i++){
+    var r=rooms[i];
+    for(var ry=r.y;ry<r.y+r.h;ry++)
+      for(var rx=r.x;rx<r.x+r.w;rx++)
+        tiles[ry][rx]=0;
+  }
+  // corridors
+  for(var i=0;i<rooms.length-1;i++){
+    var a=rooms[i],b=rooms[i+1];
+    var ax=a.x+(a.w/2|0),ay=a.y+(a.h/2|0);
+    var bx=b.x+(b.w/2|0),by=b.y+(b.h/2|0);
+    var cx=ax,cy=ay;
+    while(cx!==bx){tiles[cy][cx]=0;cx+=(cx<bx)?1:-1;}
+    while(cy!==by){tiles[cy][cx]=0;cy+=(cy<by)?1:-1;}
+  }
+
+  // ENTRANCE — in spawn room
+  var sp=rooms[0];
+  var entrance={x:sp.x+2,y:sp.y+2};
+  tiles[entrance.y][entrance.x]=2;
+
+  // MAIN TERMINAL — in last room (deepest)
+  var last=rooms[rooms.length-1];
+  var mt={x:last.x+(last.w/2|0), y:last.y+(last.h/2|0)};
+  tiles[mt.y][mt.x]=4;
+
+  // SIDE TERMINALS — 2-3 in middle rooms
+  var sideTerminals=[];
+  var midRooms=rooms.slice(2,rooms.length-1);
+  var count=Math.min(3,midRooms.length);
+  for(var i=0;i<count;i++){
+    var r=midRooms[Math.floor(i*(midRooms.length/count))];
+    var sx=r.x+(r.w/2|0), sy=r.y+(r.h/2|0);
+    if(tiles[sy][sx]===0){
+      tiles[sy][sx]=5;
+      sideTerminals.push({x:sx,y:sy});
+    }
+  }
+
+  return{tiles:tiles, rooms:rooms, entrance:entrance, mainTerminal:mt, sideTerminals:sideTerminals};
+}
+
+// ── DEVICES ──────────────────────────────────────────────
+function makeDevices(rooms,tiles,wave){
+  var list=[];
+
+  // cameras — 1 per room from index 1
+  for(var i=1;i<rooms.length;i++){
+    var r=rooms[i];
+    list.push({id:'cam'+i, type:'cam',
+      x:r.x+(r.w/2|0), y:r.y,
+      hacked:false, facing:Math.PI/2,
+      rotDir:(Math.random()>.5?1:-1)*0.0012,
+      fov:Math.PI/2.5, range:4.5,
+      desc:'Kamera #'+i, hackable:true});
+  }
+
+  // guards
+  var ng=2+Math.floor(wave*1.5);
+  for(var i=0;i<ng;i++){
+    var r=rooms[1+(Math.random()*(rooms.length-1)|0)];
+    var gx=r.x+1+(Math.random()*Math.max(1,r.w-2)|0);
+    var gy=r.y+1+(Math.random()*Math.max(1,r.h-2)|0);
+    var px=r.x+1+(Math.random()*Math.max(1,r.w-2)|0);
+    var py=r.y+1+(Math.random()*Math.max(1,r.h-2)|0);
+    list.push({id:'guard'+i, type:'guard',
+      x:gx,y:gy,hp:2,
+      patrol:[{x:gx,y:gy},{x:px,y:py}],
+      pi:0,moveT:0,alertT:0,aware:false,facing:0,
+      offline:wave>2&&Math.random()>.7,
+      hacked:false,dead:false,
+      desc:'Strażnik #'+(i+1), hackable:true});
+  }
+
+  // drones wave 2+
+  if(wave>1){
+    for(var i=0;i<wave-1;i++){
+      var r=rooms[1+(Math.random()*(rooms.length-1)|0)];
+      var ocx=r.x+r.w/2, ocy=r.y+r.h/2;
+      list.push({id:'drone'+i, type:'drone',
+        x:ocx,y:ocy, angle:Math.random()*Math.PI*2,
+        radius:1.5+Math.random(), speed:0.01+wave*0.003,
+        ocx:ocx,ocy:ocy,
+        hacked:false,hijacked:false,dead:false,
+        desc:'Dron #'+(i+1), hackable:true});
+    }
+  }
+
+  return list;
+}
+
+// ── INIT ─────────────────────────────────────────────────
+function INIT(wave,credits){
+  var map=makeMap();
+  var sp=map.rooms[0];
+  var devs=makeDevices(map.rooms,map.tiles,wave);
+
+  G={
+    wave:wave,
+    tiles:map.tiles,
+    rooms:map.rooms,
+    entrance:map.entrance,
+    mainTerminal:map.mainTerminal,
+    sideTerminals:map.sideTerminals,
+    devices:devs,
+    P:{x:sp.x+2.5,y:sp.y+3.5, hp:100,mhp:100, bw:100,mbw:100, cr:credits},
+    cam:{x:0,y:0},
+    alert:0,
+    blackout:false,boT:0,
+    mainHacked:false,        // main terminal hacked?
+    missionPhase:0,          // 0=infiltrate 1=hack-main 2=exfiltrate
+    hackProgress:0,          // 0-100 channel progress for main terminal
+    hackingMain:false,       // currently channeling main terminal
+    sideHacked:[],           // ids of hacked side terminals
+    tick:0,
+    dead:false,
+    cleared:false,
+    succeeded:false,
+  };
+
+  document.getElementById('vz').textContent='SECTOR-0'+wave;
+  updateMission();
+  rebuildList();
+  closeCtx();
+}
+
+function updateMission(){
+  if(!G) return;
+  var el=document.getElementById('mission');
+  if(G.missionPhase===0) el.textContent='CEL: Znajdź terminal główny ⊛ i go zhakuj';
+  else if(G.missionPhase===1) el.innerHTML='HAKOWANIE: <span style="color:#ffd700">pozostań przy terminalu</span>';
+  else el.innerHTML='EXFILTRACJA: <span style="color:#ff3a5c">wróć do wejścia ▲</span>';
+}
+
+// ── HELPERS ──────────────────────────────────────────────
+function byType(t){return G.devices.filter(function(d){return d.type===t;})}
+function walk(wx,wy){return canWalk(G.tiles,wx,wy);}
+
+// ── UPDATE ───────────────────────────────────────────────
+function update(dt){
+  if(!G||G.dead||G.cleared) return;
+  G.tick++;
+  var P=G.P;
+
+  P.bw=Math.min(P.mbw,P.bw+dt*0.035);
+  if(G.blackout){G.boT-=dt;if(G.boT<=0){G.blackout=false;log('Zasilanie przywrócone','w');}}
+
+  // movement
+  var dx=0,dy=0;
+  if(KEYS.ArrowUp   ||KEYS.w||KEYS.W) dy=-1;
+  if(KEYS.ArrowDown ||KEYS.s||KEYS.S) dy=1;
+  if(KEYS.ArrowLeft ||KEYS.a||KEYS.A) dx=-1;
+  if(KEYS.ArrowRight||KEYS.d||KEYS.D) dx=1;
+  if(dx&&dy){dx*=0.707;dy*=0.707;}
+
+  // break main hack channel if player moves away
+  var mt=G.mainTerminal;
+  var distMT=Math.hypot(P.x-mt.x,P.y-mt.y);
+  if(G.hackingMain&&(distMT>1.8||(dx||dy))){
+    G.hackingMain=false;
+    G.hackProgress=Math.max(0,G.hackProgress-10);
+    log('Kanał zerwany!','w');
+    updateMission();
+  }
+
+  var spd=SPD*dt/1000;
+  if(dx||dy){
+    if(walk(P.x+dx*spd,P.y)) P.x+=dx*spd;
+    if(walk(P.x,P.y+dy*spd)) P.y+=dy*spd;
+  }
+
+  // main terminal hacking channel
+  if(G.hackingMain){
+    G.hackProgress+=dt*0.025; // ~40s full, can be faster from side terminals
+    G.alert=clamp(G.alert+dt*0.008); // hacking raises alert slowly
+    if(G.hackProgress>=100){
+      G.hackingMain=false;
+      G.mainHacked=true;
+      G.missionPhase=2;
+      G.tiles[mt.y][mt.x]=0; // consumed
+      log('>>> TERMINAL ZHAKOWANY — wróć do wejścia!','ok');
+      updateMission();
+      // bonus: cameras all blinded after main hack
+      byType('cam').forEach(function(c){c.hacked=true;});
+    }
+  }
+
+  // entrance check (exfiltration)
+  var en=G.entrance;
+  var distEN=Math.hypot(P.x-en.x,P.y-en.y);
+  if(G.missionPhase===2&&distEN<1.2){
+    // success depends on alert level
+    if(G.alert<70){
+      win();
+    } else {
+      // partial — caught at exit
+      G.cleared=true;
+      document.getElementById('ovf').classList.add('show');
+    }
+    return;
+  }
+
+  // data pickup from side terminals (walk over)
+  for(var i=0;i<G.sideTerminals.length;i++){
+    var st=G.sideTerminals[i];
+    var sid='sterm'+i;
+    if(G.sideHacked.indexOf(sid)>=0) continue;
+    if(Math.hypot(P.x-st.x,P.y-st.y)<1.0){
+      // auto-prompt handled by click; if adjacent just flag proximity
+    }
+  }
+
+  // cameras
+  var cams=byType('cam');
+  for(var i=0;i<cams.length;i++){
+    var d=cams[i];
+    if(d.hacked||G.blackout) continue;
+    d.facing+=d.rotDir;
+    if(dst(d,P)>d.range) continue;
+    var ang=Math.atan2(P.y-d.y,P.x-d.x);
+    var diff=ang-d.facing;
+    while(diff>Math.PI)diff-=Math.PI*2;while(diff<-Math.PI)diff+=Math.PI*2;
+    if(Math.abs(diff)<d.fov/2) G.alert=clamp(G.alert+dt*0.016);
+  }
+
+  // guards
+  var guards=byType('guard');
+  for(var i=0;i<guards.length;i++){
+    var d=guards[i];
+    if(!d.dead&&!d.offline) tickGuard(d,P,dt);
+  }
+
+  // drones
+  var drones=byType('drone');
+  for(var i=0;i<drones.length;i++){
+    if(!drones[i].dead) tickDrone(drones[i],P,dt);
+  }
+
+  // slow alert decay
+  if(G.alert>0&&G.tick%90===0) G.alert=Math.max(0,G.alert-0.4);
+
+  // stealth label
+  var sv=document.getElementById('sv');
+  if(G.alert<15){sv.textContent='GHOST';sv.style.color='#00ff9f';}
+  else if(G.alert<40){sv.textContent='SHADOW';sv.style.color='#ffd700';}
+  else if(G.alert<65){sv.textContent='SPOTTED';sv.style.color='#ff9a3c';}
+  else if(G.alert<85){sv.textContent='HUNTED';sv.style.color='#ff5a2c';}
+  else{sv.textContent='COMPROMISED';sv.style.color='#ff3a5c';}
+
+  refreshHUD();
+}
+
+function tickGuard(d,P,dt){
+
+  // ─────────────────────────────
+  // STATE MACHINE
+  // idle -> suspicious -> chase -> search
+  // ─────────────────────────────
+
+  if(!d.state) d.state='idle';
+
+  var dist=dst(d,P);
+
+  // detection cone
+  var dx=P.x-d.x;
+  var dy=P.y-d.y;
+  var ang=Math.atan2(dy,dx);
+
+  var diff=ang-(d.facing||0);
+
+  while(diff>Math.PI) diff-=Math.PI*2;
+  while(diff<-Math.PI) diff+=Math.PI*2;
+
+  var seesPlayer=
+    dist<5 &&
+    Math.abs(diff)<0.8 &&
+    !G.blackout;
+
+  // ─────────────────────────────
+  // DETECTION
+  // ─────────────────────────────
+
+  if(seesPlayer){
+
+    d.lastSeen={x:P.x,y:P.y};
+
+    if(d.state==='idle'){
+      d.state='suspicious';
+      log('Strażnik coś zauważył','w');
+    }
+
+    d.detect=(d.detect||0)+dt*0.0015;
+
+    G.alert=clamp(G.alert+dt*0.015);
+
+    if(d.detect>2){
+      d.state='chase';
+    }
+
+  } else {
+
+    d.detect=Math.max(0,(d.detect||0)-dt*0.002);
+
+    if(d.state==='suspicious' && d.detect<=0){
+      d.state='idle';
+    }
+
+    if(d.state==='chase'){
+      d.searchTimer=(d.searchTimer||0)+dt;
+
+      if(d.searchTimer>4000){
+        d.state='search';
+        d.searchTimer=0;
+      }
+    }
+
+    if(d.state==='search'){
+      d.searchTimer=(d.searchTimer||0)+dt;
+
+      if(d.searchTimer>5000){
+        d.state='idle';
+        d.searchTimer=0;
+      }
+    }
+  }
+
+  // ─────────────────────────────
+  // BEHAVIOUR
+  // ─────────────────────────────
+
+  var spd=0.015*dt;
+
+  // CHASE PLAYER
+  if(d.state==='chase'){
+
+    var vx=P.x-d.x;
+    var vy=P.y-d.y;
+
+    var len=Math.hypot(vx,vy);
+
+    if(len>0.1){
+
+      vx/=len;
+      vy/=len;
+
+      if(walk(d.x+vx*spd,d.y))
+        d.x+=vx*spd;
+
+      if(walk(d.x,d.y+vy*spd))
+        d.y+=vy*spd;
+
+      d.facing=Math.atan2(vy,vx);
+    }
+
+    // damage
+    if(dist<1.2){
+
+      P.hp-=dt*0.03;
+
+      if(P.hp<=0){
+        killPlayer('Strażnik cię dopadł');
+      }
+    }
+
+  }
+
+  // SEARCH LAST POSITION
+  else if(d.state==='search' && d.lastSeen){
+
+    var tx=d.lastSeen.x;
+    var ty=d.lastSeen.y;
+
+    var vx=tx-d.x;
+    var vy=ty-d.y;
+
+    var len=Math.hypot(vx,vy);
+
+    if(len>0.2){
+
+      vx/=len;
+      vy/=len;
+
+      if(walk(d.x+vx*spd*0.7,d.y))
+        d.x+=vx*spd*0.7;
+
+      if(walk(d.x,d.y+vy*spd*0.7))
+        d.y+=vy*spd*0.7;
+
+      d.facing=Math.atan2(vy,vx);
+    }
+
+  }
+
+  // PATROL
+  else {
+
+    d.moveT=(d.moveT||0)+dt;
+
+    if(d.moveT>700){
+
+      d.moveT=0;
+
+      var pt=d.patrol[d.pi%d.patrol.length];
+
+      var vx=pt.x-d.x;
+      var vy=pt.y-d.y;
+
+      if(Math.abs(vx)+Math.abs(vy)<0.5){
+
+        d.pi++;
+
+      } else {
+
+        var sx=Math.sign(vx)*0.35;
+        var sy=Math.sign(vy)*0.35;
+
+        if(walk(d.x+sx,d.y))
+          d.x+=sx;
+
+        if(walk(d.x,d.y+sy))
+          d.y+=sy;
+
+        d.facing=Math.atan2(vy,vx);
+      }
+    }
+  }
+}
+
+
+function tickDrone(d,P,dt){
+  if(d.hijacked){
+    var en=byType('guard').filter(function(e){return !e.dead&&!e.hacked;})
+      .sort(function(a,b){return dst(a,d)-dst(b,d);})[0];
+    if(!en){d.hijacked=false;return;}
+    var ddx=en.x-d.x,ddy=en.y-d.y,l=Math.hypot(ddx,ddy);
+    if(l<0.8){
+      en.dead=true;log('Dron zestrzelił strażnika','ok');
+      G.alert=clamp(G.alert+18);floatMsg('IMPACT!',d,'#ff3a5c');
+      d.hijacked=false;d.hacked=false;rebuildList();
+    } else {d.x+=ddx/l*0.025*dt;d.y+=ddy/l*0.025*dt;}
+    return;
+  }
+  d.angle+=d.speed*dt;
+  d.x=d.ocx+Math.cos(d.angle)*d.radius;
+  d.y=d.ocy+Math.sin(d.angle)*d.radius;
+  if(dst(d,P)<2&&!G.blackout){
+    G.alert=clamp(G.alert+dt*0.012);
+    if(dst(d,P)<1){P.hp=Math.max(0,P.hp-dt*0.025);if(P.hp<=0)killPlayer('Zestrzelony przez dron');}
+  }
+}
+
+// ── CONTEXT MENU ─────────────────────────────────────────
+var ctxOpen=false;
+
+function showCtx(screenX,screenY,target,targetType){
+  var menu=document.getElementById('ctx');
+  var btns=document.getElementById('ctx-btns');
+  var title=document.getElementById('ctx-title');
+  btns.innerHTML='';
+  title.textContent=target.desc||targetType;
+
+  var P=G.P;
+  var inRange=dst(target,P)<=HR;
+  var bw=P.bw;
+
+  if(targetType==='cam'){
+    addCtxBtn('◉  Zaślepi kamerę (BW:15)',bw>=15&&inRange&&!target.hacked,function(){
+      hackCam(target);closeCtx();
+    });
+    addCtxBtn('◎  Zapętl feed -10s (BW:8)',bw>=8&&inRange&&!target.hacked,function(){
+      loopCam(target);closeCtx();
+    });
+    if(target.hacked) addCtxBtn('✓  Już zhakowana',false,null);
+  }
+
+  else if(targetType==='guard'){
+    if(target.offline){
+      addCtxBtn('✗  Offline — brak sygnału',false,null);
+    } else {
+      addCtxBtn('⚡  Przeciąż implant (BW:30)',bw>=30&&inRange&&!target.dead,function(){
+        overloadGuard(target);closeCtx();
+      });
+      addCtxBtn('👁  Zaślepij cyberoczy (BW:15)',bw>=15&&inRange&&!target.dead&&!target.hacked,function(){
+        blindGuard(target);closeCtx();
+      });
+      addCtxBtn('↻  Przekieruj patrol (BW:10)',bw>=10&&inRange&&!target.dead,function(){
+        redirectGuard(target);closeCtx();
+      });
+    }
+  }
+
+  else if(targetType==='drone'){
+    addCtxBtn('⬡  Przejmi sterowanie (BW:25)',bw>=25&&inRange&&!target.hijacked&&!target.dead,function(){
+      hijackDrone(target);closeCtx();
+    });
+    addCtxBtn('✗  Wyłącz dron (BW:20)',bw>=20&&inRange&&!target.dead,function(){
+      killDrone(target);closeCtx();
+    });
+  }
+
+  else if(targetType==='sterm'){
+    var alreadyHacked=G.sideHacked.indexOf(target.id)>=0;
+    addCtxBtn(alreadyHacked?'✓  Już zhakowany':'⊡  Hackuj terminal (BW:20) — odblokuj opcje',
+      bw>=20&&inRange&&!alreadyHacked,function(){
+        hackSideTerm(target);closeCtx();
+      });
+    if(alreadyHacked){
+      addCtxBtn('◉  Blind kamery w sektorze (BW:5)',bw>=5,function(){
+        blindSector(target);closeCtx();
+      });
+      addCtxBtn('⚠  Fałszywy alarm (BW:10)',bw>=10,function(){
+        falseAlarm(target);closeCtx();
+      });
+      addCtxBtn('⬇  Obniż alert -15 (BW:15)',bw>=15,function(){
+        suppressAlert(target);closeCtx();
+      });
+    }
+  }
+
+  else if(targetType==='mainterm'){
+    var d2=dst(target,P);
+    if(G.mainHacked){
+      addCtxBtn('✓  Zhakowany — wróć do wejścia',false,null);
+    } else if(d2>1.8){
+      addCtxBtn('⊛  Zbliż się do terminala',false,null);
+    } else if(G.hackingMain){
+      addCtxBtn('⏳  Hakowanie w toku... pozostań!',false,null);
+      addCtxBtn('✗  Przerwij kanał',true,function(){
+        G.hackingMain=false;log('Kanał zerwany','w');closeCtx();
+      });
+    } else {
+      addCtxBtn('⊛  Inicjuj hack (pozostań nieruchomy)',true,function(){
+        G.hackingMain=true;G.missionPhase=1;
+        log('Kanał otwarty — nie ruszaj się!','ok');
+        updateMission();closeCtx();
+      });
+    }
+  }
+
+  addCtxSep();
+  addCtxBtn('✗  Zamknij',true,closeCtx);
+
+  // position
+  var mw=160, mh=menu.scrollHeight;
+  var x=Math.min(screenX, window.innerWidth-mw-4);
+  var y=Math.min(screenY, window.innerHeight-200);
+  menu.style.left=x+'px';
+  menu.style.top=y+'px';
+  menu.style.display='block';
+  ctxOpen=true;
+}
+
+function addCtxBtn(label,enabled,cb){
+  var btn=document.createElement('button');
+  btn.textContent=label;btn.disabled=!enabled;
+  if(enabled&&cb) btn.onclick=cb;
+  document.getElementById('ctx-btns').appendChild(btn);
+}
+function addCtxSep(){
+  var s=document.createElement('div');s.className='sep';
+  document.getElementById('ctx-btns').appendChild(s);
+}
+function closeCtx(){document.getElementById('ctx').style.display='none';ctxOpen=false;}
+
+// ── HACK ACTIONS ─────────────────────────────────────────
+function hackCam(d){
+  if(G.P.bw<15) return;
+  d.hacked=true;G.P.bw-=15;G.alert=clamp(G.alert+5);
+  log('Kamera #'+d.id+' zaślepiona','ok');floatMsg('BLIND',d,'#00ff9f');rebuildList();
+}
+function loopCam(d){
+  if(G.P.bw<8) return;
+  d.hacked=true;G.P.bw-=8;G.alert=clamp(G.alert+2);
+  log('Feed zapętlony','ok');floatMsg('LOOP',d,'#0af');rebuildList();
+  // unblind after 10s
+  setTimeout(function(){if(G&&!G.dead){d.hacked=false;rebuildList();log('Feed wznowiony','w');}},10000);
+}
+function overloadGuard(d){
+  if(G.P.bw<30) return;
+  d.dead=true;G.P.bw-=30;G.alert=clamp(G.alert+22);
+  log('Implant przeciążony — strażnik down','ok');floatMsg('FLATLINED',d,'#ff3a5c');rebuildList();
+}
+function blindGuard(d){
+  if(G.P.bw<15) return;
+  d.hacked=true;G.P.bw-=15;G.alert=clamp(G.alert+8);
+  log('Cyberoczy zaślepione','ok');floatMsg('BLIND',d,'#0af');rebuildList();
+  setTimeout(function(){if(G&&!G.dead){d.hacked=false;rebuildList();}},8000);
+}
+function redirectGuard(d){
+  if(G.P.bw<10) return;
+  G.P.bw-=10;
+  // send to far corner
+  d.patrol=[{x:1,y:1},{x:MW-3,y:MH-3}];d.pi=0;d.aware=false;d.alertT=0;
+  G.alert=clamp(G.alert+5);
+  log('Patrol przekierowany','ok');floatMsg('REROUTE',d,'#ffd700');
+}
+function hijackDrone(d){
+  if(G.P.bw<25) return;
+  d.hijacked=true;d.hacked=true;G.P.bw-=25;G.alert=clamp(G.alert+10);
+  log('Dron przejęty','ok');floatMsg('HIJACKED',d,'#0af');rebuildList();
+}
+function killDrone(d){
+  if(G.P.bw<20) return;
+  d.dead=true;G.P.bw-=20;G.alert=clamp(G.alert+12);
+  log('Dron wyłączony','ok');floatMsg('OFFLINE',d,'#ffd700');rebuildList();
+}
+function hackSideTerm(t){
+  if(G.P.bw<20) return;
+  G.P.bw-=20;G.sideHacked.push(t.id);
+  G.alert=clamp(G.alert+8);
+  // side terminal bonus: speed up main hack by 20%
+  G.hackSpeedBonus=(G.hackSpeedBonus||0)+0.2;
+  log('Terminal poboczny zhakowany — kanał +20% szybszy','ok');
+  floatMsg('+20% SPEED',t,'#ffd700');rebuildList();
+}
+function blindSector(t){
+  if(G.P.bw<5) return;
+  G.P.bw-=5;
+  // blind cams near this terminal
+  byType('cam').filter(function(c){return dst(c,t)<8;}).forEach(function(c){c.hacked=true;});
+  log('Kamery w sektorze zaślepione','ok');floatMsg('SECTOR BLIND',t,'#00ff9f');rebuildList();
+}
+function falseAlarm(t){
+  if(G.P.bw<10) return;
+  G.P.bw-=10;
+  // redirect guards away
+  byType('guard').filter(function(g){return !g.dead&&dst(g,t)<10;}).forEach(function(g){
+    g.patrol=[{x:MW-3,y:1},{x:MW-3,y:MH-3}];g.pi=0;g.aware=false;g.alertT=0;
+  });
+  log('Fałszywy alarm — strażnicy przekierowani','ok');floatMsg('FALSE ALARM',t,'#ffd700');
+}
+function suppressAlert(t){
+  if(G.P.bw<15) return;
+  G.P.bw-=15;G.alert=clamp(G.alert-15);
+  log('Alert stłumiony -15','ok');floatMsg('-15 ALERT',t,'#00ff9f');
+}
+
+// ── WIN / LOSE ────────────────────────────────────────────
+function win(){
+  G.cleared=true;G.succeeded=true;
+  var bonus=150+G.wave*80+(100-G.alert|0);
+  G.P.cr+=bonus;
+  var el=document.getElementById('reward-txt');
+  el.innerHTML=
+    'Sektor: SECTOR-0'+G.wave+'<br>'+
+    'Nagroda za misję:  ¥'+bonus+'<br>'+
+    'Alert przy wyjściu: '+Math.ceil(G.alert)+'%<br>'+
+    'Kredyty łącznie:   ¥'+G.P.cr+'<br>'+
+    'Terminale poboczne: '+G.sideHacked.length+'/'+G.sideTerminals.length;
+  document.getElementById('ovs').classList.add('show');
+}
+function killPlayer(reason){
+  G.dead=true;
+  document.getElementById('dm').textContent='// '+reason.toUpperCase();
+  document.getElementById('ovd').classList.add('show');
+}
+function RESTART(){
+  document.getElementById('ovd').classList.remove('show');
+  document.getElementById('ovf').classList.remove('show');
+  INIT(1,0);
+}
+function NEXT(){
+  document.getElementById('ovs').classList.remove('show');
+  INIT(G.wave+1,G.P.cr);
+}
+
+// ── RENDER ───────────────────────────────────────────────
+function render(){
+  if(!G) return;
+  var P=G.P;
+  W=cvs.width;H=cvs.height;
+  var vw=Math.ceil(W/T)+2, vh=Math.ceil(H/T)+2;
+  G.cam.x=Math.max(0,Math.min(MW-vw,Math.floor(P.x-vw/2)));
+  G.cam.y=Math.max(0,Math.min(MH-vh,Math.floor(P.y-vh/2)));
+  var cx=G.cam.x,cy=G.cam.y;
+
+  ctx.fillStyle='#07090f';ctx.fillRect(0,0,W,H);
+
+  // tiles
+  for(var ty=cy;ty<cy+vh;ty++){
+    for(var tx=cx;tx<cx+vw;tx++){
+      if(ty<0||ty>=MH||tx<0||tx>=MW) continue;
+      var tile=G.tiles[ty][tx];
+      var px=(tx-cx)*T,py=(ty-cy)*T;
+
+      if(tile===0){
+        ctx.fillStyle=(tx+ty)%2===0?'#0c0f17':'#0e1220';
+        ctx.fillRect(px,py,T,T);
+        ctx.fillStyle='rgba(0,160,255,0.022)';
+        ctx.fillRect(px,py,T,1);ctx.fillRect(px,py,1,T);
+      } else if(tile===1){
+        ctx.fillStyle='#1a2030';ctx.fillRect(px,py,T,3);
+        ctx.fillStyle='#111622';ctx.fillRect(px,py+3,T,T-3);
+        if((tx*11+ty*7)%19===0){ctx.fillStyle='rgba(0,160,255,0.1)';ctx.fillRect(px+T-2,py,2,T);}
+      } else if(tile===2){ // entrance ▲
+        ctx.fillStyle='#001a00';ctx.fillRect(px,py,T,T);
+        var alpha=0.5+0.5*Math.sin(G.tick*0.05);
+        ctx.strokeStyle='rgba(0,255,100,'+alpha+')';ctx.lineWidth=1;
+        ctx.strokeRect(px+1,py+1,T-2,T-2);
+        ctx.fillStyle='#00ff9f';ctx.font='10px monospace';ctx.fillText('\u25B2',px+4,py+12);
+        if(G.missionPhase===2){
+          // pulsing stronger when exfil
+          ctx.fillStyle='rgba(0,255,100,0.15)';ctx.fillRect(px,py,T,T);
+        }
+      } else if(tile===4){ // main terminal ⊛
+        ctx.fillStyle=G.hackingMain?'#001a0a':'#1a0a00';ctx.fillRect(px,py,T,T);
+        var col=G.hackingMain?'#00ff9f':'#ffd700';
+        ctx.strokeStyle=col;ctx.lineWidth=1;ctx.strokeRect(px+1,py+1,T-2,T-2);
+        ctx.fillStyle=col;ctx.font='11px monospace';ctx.fillText('\u2295',px+4,py+13);
+        // progress bar on top
+        if(G.hackingMain){
+          ctx.fillStyle='#00ff9f44';
+          ctx.fillRect(px,py-3,T*(G.hackProgress/100),3);
+          ctx.strokeStyle='#00ff9f';ctx.lineWidth=0.5;ctx.strokeRect(px,py-3,T,3);
+        }
+      } else if(tile===5){ // side terminal □
+        var shacked=false;
+        for(var si=0;si<G.sideTerminals.length;si++){
+          if(G.sideTerminals[si].x===tx&&G.sideTerminals[si].y===ty&&G.sideHacked.indexOf('sterm'+si)>=0){shacked=true;break;}
+        }
+        ctx.fillStyle=shacked?'#001510':'#100a00';ctx.fillRect(px,py,T,T);
+        ctx.strokeStyle=shacked?'#0af':'#ffd70066';ctx.lineWidth=0.7;
+        ctx.strokeRect(px+2,py+2,T-4,T-4);
+        ctx.fillStyle=shacked?'#0af':'#ffd700';ctx.font='10px monospace';
+        ctx.fillText(shacked?'\u25A3':'\u25A1',px+4,py+12);
+      }
+    }
+  }
+
+  // camera FOV
+  var cams=byType('cam');
+  for(var i=0;i<cams.length;i++){
+    var d=cams[i];
+    if(d.hacked||G.blackout) continue;
+    var dpx=(d.x-cx)*T+T/2,dpy=(d.y-cy)*T+T/2;
+    ctx.save();
+    ctx.fillStyle='rgba(255,58,92,0.07)';ctx.strokeStyle='rgba(255,58,92,0.3)';ctx.lineWidth=0.5;
+    ctx.beginPath();ctx.moveTo(dpx,dpy);
+    ctx.arc(dpx,dpy,d.range*T,d.facing-d.fov/2,d.facing+d.fov/2);
+    ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.restore();
+  }
+   // ─────────────────────────────
+// GUARD VISION CONES
+// ─────────────────────────────
+
+var guards=byType('guard');
+
+for(var i=0;i<guards.length;i++){
+
+  var g=guards[i];
+
+  if(g.dead || g.offline)
+    continue;
+
+  var gx=(g.x-cx)*T+T/2;
+  var gy=(g.y-cy)*T+T/2;
+
+  var color='rgba(255,255,0,0.05)';
+
+  if(g.state==='suspicious')
+    color='rgba(255,140,0,0.08)';
+
+  if(g.state==='chase')
+    color='rgba(255,0,80,0.12)';
+
+  drawVisionCone(
+    g.x-cx+0.5,
+    g.y-cy+0.5,
+    g.facing||0,
+    1.6,
+    5,
+    color
+  );
+} 
+
+  // devices
+  for(var i=0;i<G.devices.length;i++){
+    var d=G.devices[i];
+    var dpx=(d.x-cx)*T,dpy=(d.y-cy)*T;
+    if(dpx<-T||dpy<-T||dpx>W+T||dpy>H+T) continue;
+    ctx.save();drawDev(d,dpx,dpy);ctx.restore();
+  }
+
+  // range circle around player
+  var ppx=(P.x-cx)*T,ppy=(P.y-cy)*T;
+  ctx.save();
+  ctx.globalAlpha=0.06;ctx.strokeStyle='#0af';ctx.lineWidth=1;
+  ctx.setLineDash([4,4]);
+  ctx.beginPath();ctx.arc(ppx+T/2,ppy+T/2,HR*T,0,Math.PI*2);ctx.stroke();
+  ctx.setLineDash([]);ctx.globalAlpha=1;
+  // player
+  ctx.fillStyle='#00ff9f';ctx.fillRect(ppx+4,ppy+4,T-8,T-6);
+  ctx.fillStyle='#0af';ctx.fillRect(ppx+5,ppy+3,T-10,4);
+  // channel indicator
+  if(G.hackingMain){
+    ctx.globalAlpha=0.4+0.4*Math.sin(G.tick*0.15);
+    ctx.strokeStyle='#00ff9f';ctx.lineWidth=1.5;
+    ctx.strokeRect(ppx+1,ppy+1,T-2,T-2);
+  }
+  ctx.restore();
+
+  // blackout
+  if(G.blackout){ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(0,0,W,H);}
+
+  // hack progress overlay (bottom of screen)
+  if(G.hackingMain){
+    ctx.fillStyle='rgba(0,255,159,0.07)';ctx.fillRect(0,H-22,W*G.hackProgress/100,22);
+    ctx.fillStyle='#00ff9f';ctx.font='9px monospace';
+    ctx.fillText('HAKOWANIE TERMINALA: '+Math.ceil(G.hackProgress)+'%  — NIE RUSZAJ SIĘ',8,H-8);
+  }
+}
+
+function drawVisionCone(x,y,angle,fov,range,color){
+  ctx.save();
+
+  ctx.beginPath();
+  ctx.moveTo(x*T,y*T);
+
+  ctx.arc(
+    x*T,
+    y*T,
+    range*T,
+    angle-fov/2,
+    angle+fov/2
+  );
+
+  ctx.closePath();
+
+  var g=ctx.createRadialGradient(
+    x*T,y*T,0,
+    x*T,y*T,range*T
+  );
+
+  g.addColorStop(0,color);
+  g.addColorStop(1,'transparent');
+
+  ctx.fillStyle=g;
+  ctx.fill();
+
+  ctx.restore();
+}
+  
+function drawDev(d,px,py){
+
+  if(d.type==='cam'){
+
+    ctx.fillStyle=d.hacked?'#00ff9f18':'#ff3a5c18';
+    ctx.fillRect(px+2,py+2,T-4,T-4);
+
+    ctx.fillStyle=d.hacked?'#00ff9f':'#ff3a5c';
+    ctx.font='11px monospace';
+
+    ctx.fillText(d.hacked?'\u25C9':'\u25CE',px+3,py+12);
+  }
+
+  else if(d.type==='guard'){
+
+    if(d.dead){
+
+      ctx.globalAlpha=0.25;
+
+      ctx.fillStyle='#ff3a5c';
+      ctx.fillRect(px+4,py+7,T-8,4);
+
+      ctx.globalAlpha=1;
+
+      return;
+    }
+
+    var col='#ffd700';
+
+    if(d.state==='suspicious')
+      col='#ff9a00';
+
+    if(d.state==='chase')
+      col='#ff3a5c';
+
+    if(d.hacked)
+      col='#00ff9f';
+
+    ctx.fillStyle=col;
+
+    ctx.fillRect(px+4,py+4,T-8,T-8);
+
+    // eye direction
+    ctx.fillStyle='#fff';
+
+    ctx.fillRect(
+      px+T/2+Math.cos(d.facing||0)*4-1,
+      py+T/2+Math.sin(d.facing||0)*4-1,
+      2,
+      2
+    );
+
+    // alert icon
+    if(d.state==='suspicious'){
+
+      ctx.fillStyle='#ff9a00';
+      ctx.font='8px monospace';
+      ctx.fillText('?',px+5,py-2);
+
+    } else if(d.state==='chase'){
+
+      ctx.fillStyle='#ff3a5c';
+      ctx.font='8px monospace';
+      ctx.fillText('!',px+5,py-2);
+    }
+  }
+
+  else if(d.type==='drone'){
+
+    if(d.dead) return;
+
+    ctx.strokeStyle=d.hijacked?'#00ff9f':'#0af';
+    ctx.lineWidth=1;
+
+    ctx.beginPath();
+    ctx.arc(px+T/2,py+T/2,4,0,Math.PI*2);
+    ctx.stroke();
+
+    for(var r=0;r<4;r++){
+
+      var a=r*Math.PI/2+G.tick*0.05;
+
+      ctx.fillStyle=d.hijacked?'#00ff9f44':'#0af4';
+
+      ctx.fillRect(
+        px+T/2+Math.cos(a)*5-1,
+        py+T/2+Math.sin(a)*5-1,
+        2,
+        2
+      );
+    }
+  }
+}
+
+// ── UI ───────────────────────────────────────────────────
+function refreshHUD(){
+  var P=G.P;
+  document.getElementById('bhp').style.width=(P.hp/P.mhp*100)+'%';
+  document.getElementById('bbw').style.width=(P.bw/P.mbw*100)+'%';
+  document.getElementById('bal').style.width=G.alert+'%';
+  document.getElementById('vcr').textContent='\u00A5'+P.cr;
+}
+function rebuildList(){
+  if(!G) return;
+  var el=document.getElementById('tl');el.innerHTML='';
+  var rows=[];
+  // side terminals
+  for(var i=0;i<G.sideTerminals.length;i++){
+    var st=G.sideTerminals[i];
+    var hacked=G.sideHacked.indexOf('sterm'+i)>=0;
+    rows.push({desc:'Terminal S-'+(i+1),st:hacked?'HACKED':'ONLINE',d:dst(st,G.P).toFixed(1)});
+  }
+  // main terminal
+  if(!G.mainHacked){
+    rows.push({desc:'Terminal GŁÓWNY',st:G.hackingMain?'HAKOWANIE...':'ONLINE',d:dst(G.mainTerminal,G.P).toFixed(1)});
+  } else {
+    rows.push({desc:'Terminal GŁÓWNY',st:'✓ HACKED',d:'—'});
+  }
+  // devices
+  for(var i=0;i<G.devices.length;i++){
+    var d=G.devices[i];
+    var st2=d.dead?'DEAD':d.hijacked?'HIJACK':d.hacked?'HACKED':d.offline?'OFFLINE':'ONLINE';
+    rows.push({desc:d.desc,st:st2,d:dst(d,G.P).toFixed(1)});
+  }
+  for(var i=0;i<rows.length;i++){
+    var div=document.createElement('div');
+    div.className='tgt';
+    div.innerHTML='<div class="tn">'+rows[i].desc+'</div><div class="ts">'+rows[i].st+' | '+rows[i].d+'t</div>';
+    el.appendChild(div);
+  }
+}
+
+var logBuf=[];
+function log(msg,cls){
+  var el=document.getElementById('log'),d=document.createElement('div');
+  d.className='ll '+(cls||'');d.textContent='> '+msg;
+  el.appendChild(d);logBuf.push(d);
+  while(logBuf.length>7)el.removeChild(logBuf.shift());
+}
+function floatMsg(msg,pos,col){
+  var px=(pos.x-G.cam.x)*T+20,py=(pos.y-G.cam.y)*T+10;
+  var el=document.createElement('div');
+  el.style.cssText='position:fixed;left:'+px+'px;top:'+(py+36)+'px;color:'+col+
+    ';font-family:monospace;font-size:10px;pointer-events:none;z-index:30;transition:opacity .8s,transform .8s;';
+  el.textContent=msg;document.body.appendChild(el);
+  requestAnimationFrame(function(){el.style.transform='translateY(-28px)';el.style.opacity='0';});
+  setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);},850);
+}
+
+// ── CLICK HANDLER ────────────────────────────────────────
+cvs_click=function(e){
+  if(!G||G.dead||G.cleared) return;
+  closeCtx();
+  var r=cvs.getBoundingClientRect();
+  var wx=(e.clientX-r.left)/T+G.cam.x;
+  var wy=(e.clientY-r.top)/T+G.cam.y;
+  var tx=wx|0,ty=wy|0;
+
+  // check tile special
+  var tile=G.tiles[ty]&&G.tiles[ty][tx];
+
+  // main terminal
+  if(tile===4){
+    showCtx(e.clientX,e.clientY,G.mainTerminal,'mainterm');return;
+  }
+  // side terminal
+  for(var i=0;i<G.sideTerminals.length;i++){
+    var st=G.sideTerminals[i];
+    if(st.x===tx&&st.y===ty){
+      var obj={x:st.x,y:st.y,id:'sterm'+i,desc:'Terminal S-'+(i+1)};
+      showCtx(e.clientX,e.clientY,obj,'sterm');return;
+    }
+  }
+  // device
+  for(var i=0;i<G.devices.length;i++){
+    var d=G.devices[i];
+    if(Math.abs(d.x-wx)<0.8&&Math.abs(d.y-wy)<0.8){
+      showCtx(e.clientX,e.clientY,d,d.type);return;
+    }
+  }
+};
+
+// ── INPUT ────────────────────────────────────────────────
+document.addEventListener('keydown',function(e){
+  KEYS[e.key]=true;
+  if(e.key==='Escape') closeCtx();
+});
+document.addEventListener('keyup',function(e){delete KEYS[e.key];});
+document.addEventListener('click',function(e){
+  // close menu if clicking outside
+  var menu=document.getElementById('ctx');
+  if(ctxOpen&&!menu.contains(e.target)) closeCtx();
+});
+
+// ── BOOT ─────────────────────────────────────────────────
+window.addEventListener('load',function(){
+  cvs=document.getElementById('gc');
+  ctx=cvs.getContext('2d');
+  ctx.imageSmoothingEnabled=false;
+
+  function resize(){
+    cvs.width=window.innerWidth;
+    cvs.height=window.innerHeight-36;
+    W=cvs.width;H=cvs.height;
+  }
+  resize();window.addEventListener('resize',resize);
+
+  cvs.addEventListener('click',cvs_click);
+
+  INIT(1,0);
+  log('System online. Infiltruj.','ok');
+  log('KLIKNIJ obiekt aby zobaczyć opcje hackowania','');
+
+  var last=performance.now();
+  function loop(ts){
+    var dt=Math.min(ts-last,50);last=ts;
+    update(dt);render();rebuildList();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+});
+
+window.RESTART=RESTART;
+window.NEXT=NEXT;
+</script>
+</body>
+</html>

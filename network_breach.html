@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NETWORK BREACH</title>
+  <link rel="stylesheet" href="./styles/network_breach.css">
+</head>
+<body>
+  <main class="nb-wrap">
+    <header class="nb-head">
+      <h1>SYSTEM: CYBER COMBAT - NETWORK BREACH</h1>
+      <p>Przejmij node zanim TRACE dojdzie do 100%</p>
+    </header>
+
+    <section class="nb-stats" id="stats"></section>
+
+    <section class="nb-grid">
+      <article class="panel">
+        <h2>Twoje hacki</h2>
+        <div id="actions" class="actions"></div>
+        <div class="hint">Dluga walka podnosi TRACE. Black ICE aktywuje sie przy 80+ TRACE.</div>
+      </article>
+
+      <article class="panel">
+        <h2>Zabezpieczenia ICE</h2>
+        <div id="enemies" class="enemies"></div>
+      </article>
+
+      <article class="panel">
+        <h2>Dziennik</h2>
+        <div id="log" class="log"></div>
+      </article>
+    </section>
+
+    <footer class="nb-footer" id="footer"></footer>
+  </main>
+
+  <script type="module" src="./src/minigame/network_breach.js"></script>
+</body>
+</html>
