@@ -37,6 +37,7 @@ let audioInitialized = false;
 let audioUnlocked = false;
 let fadeToken = 0;
 let introAudioActive = false;
+let introStopQueued = false;
 let lastTrackPathByMode = {
 	intro: null,
 	calm: null,
@@ -102,6 +103,7 @@ export function stopAudio() {
 	fadeToken += 1;
 	desiredMode = null;
 	isTransitioning = false;
+	introStopQueued = false;
 	stopAllTracks(true);
 	currentMode = null;
 	currentTrack = null;
@@ -123,6 +125,9 @@ export function toggleMusicEnabled() {
 export function setMusicEnabled(enabled) {
 	G.audioEnabled = !!enabled;
 	G.musicEnabled = !!enabled;
+	if (!G.audioEnabled) {
+		introStopQueued = false;
+	}
 	persistAudioPreference();
 	emitAudioState();
 	const targetMode = resolveTargetMode();
@@ -138,7 +143,24 @@ export function setMusicEnabled(enabled) {
 }
 
 export function setIntroAudioActive(active) {
-	introAudioActive = !!active;
+	if (active) {
+		introStopQueued = false;
+		introAudioActive = true;
+		resetIntroTrackLooping();
+		updateAudio();
+		return;
+	}
+
+	if (currentMode === 'intro' && currentTrack?.audio) {
+		introStopQueued = true;
+		currentTrack.audio.loop = false;
+		ensureIntroTrackEndHandler(currentTrack.audio);
+		return;
+	}
+
+	introStopQueued = false;
+	introAudioActive = false;
+	resetIntroTrackLooping();
 	updateAudio();
 }
 
@@ -148,7 +170,7 @@ function createAudioPools() {
 			mode,
 			paths.map((path) => {
 				const audio = new Audio(path);
-				audio.loop = true;
+				audio.loop = mode !== 'intro';
 				audio.preload = 'auto';
 				audio.volume = 0;
 				return { path, audio };
@@ -323,6 +345,36 @@ function stopAllTracks(resetTime) {
 				track.audio.currentTime = 0;
 			}
 		}
+	}
+
+	resetIntroTrackLooping();
+}
+
+function ensureIntroTrackEndHandler(audio) {
+	if (!audio || audio._gpIntroEndBound) {
+		return;
+	}
+
+	audio._gpIntroEndBound = true;
+	audio.addEventListener('ended', () => {
+		if (!introStopQueued) {
+			return;
+		}
+
+		introStopQueued = false;
+		introAudioActive = false;
+		resetIntroTrackLooping();
+		updateAudio();
+	});
+}
+
+function resetIntroTrackLooping() {
+	if (!G.audio?.intro) {
+		return;
+	}
+
+	for (const track of G.audio.intro) {
+		track.audio.loop = true;
 	}
 }
 
