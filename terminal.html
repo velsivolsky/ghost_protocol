@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS NODE :: RECOVERY MODE</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-dark: #0a0e27;
+            --bg-darker: #050609;
+            --glow-cyan: #00d9ff;
+            --glow-green: #39ff14;
+            --glow-purple: #a500ff;
+            --glow-red: #ff006e;
+            --text-primary: #00d9ff;
+            --text-secondary: #39ff14;
+            --text-danger: #ff006e;
+            --terminal-bg: rgba(10, 14, 39, 0.95);
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a0033 50%, #0a0e27 100%);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .screen-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-darker);
+            overflow: hidden;
+        }
+
+        .glow-bg {
+            position: absolute;
+            width: 200%;
+            height: 200%;
+            top: -50%;
+            left: -50%;
+            background: 
+                radial-gradient(circle at 20% 30%, rgba(0, 217, 255, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(165, 0, 255, 0.03) 0%, transparent 50%);
+            animation: glowShift 8s ease-in-out infinite;
+            filter: blur(80px);
+        }
+
+        @keyframes glowShift {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(30px, -30px); }
+        }
+
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.3),
+                rgba(0, 0, 0, 0.3) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 100;
+            animation: scanlineFlicker 0.15s infinite;
+        }
+
+        @keyframes scanlineFlicker {
+            0%, 100% { opacity: 0.03; }
+            50% { opacity: 0.08; }
+        }
+
+        .flicker {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.02);
+            pointer-events: none;
+            z-index: 99;
+            animation: flicker 0.15s infinite;
+        }
+
+        @keyframes flicker {
+            0% { opacity: 0.97; }
+            5% { opacity: 0.98; }
+            10% { opacity: 0.96; }
+            15% { opacity: 0.99; }
+            20% { opacity: 0.97; }
+            25% { opacity: 0.98; }
+            30% { opacity: 0.96; }
+            35% { opacity: 0.97; }
+            40% { opacity: 0.99; }
+            45% { opacity: 0.98; }
+            50% { opacity: 0.97; }
+            55% { opacity: 0.96; }
+            60% { opacity: 0.99; }
+            65% { opacity: 0.97; }
+            70% { opacity: 0.98; }
+            75% { opacity: 0.96; }
+            80% { opacity: 0.99; }
+            85% { opacity: 0.97; }
+            90% { opacity: 0.98; }
+            95% { opacity: 0.96; }
+            100% { opacity: 0.97; }
+        }
+
+        .terminal {
+            position: relative;
+            z-index: 50;
+            width: 95%;
+            max-width: 900px;
+            height: 85vh;
+            background: var(--terminal-bg);
+            border: 2px solid var(--glow-cyan);
+            border-radius: 8px;
+            box-shadow: 
+                0 0 20px rgba(0, 217, 255, 0.3),
+                0 0 40px rgba(165, 0, 255, 0.15),
+                inset 0 0 20px rgba(0, 217, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+
+        .terminal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(0, 217, 255, 0.3);
+            background: linear-gradient(90deg, rgba(0, 217, 255, 0.05), transparent);
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-title {
+            font-weight: bold;
+            color: var(--glow-cyan);
+            text-shadow: 0 0 10px rgba(0, 217, 255, 0.5);
+        }
+
+        .header-status {
+            color: var(--text-danger);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .terminal-output {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            color: var(--text-primary);
+            font-size: 13px;
+            line-height: 1.6;
+            background: var(--terminal-bg);
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .terminal-output::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .terminal-output::-webkit-scrollbar-track {
+            background: rgba(0, 217, 255, 0.1);
+        }
+
+        .terminal-output::-webkit-scrollbar-thumb {
+            background: rgba(0, 217, 255, 0.3);
+            border-radius: 4px;
+        }
+
+        .terminal-output::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 217, 255, 0.5);
+        }
+
+        .line {
+            margin-bottom: 4px;
+            opacity: 0;
+            animation: fadeIn 0.3s forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .log-system { color: var(--text-secondary); }
+        .log-info { color: var(--text-primary); }
+        .log-error { color: var(--text-danger); }
+        .log-success { color: var(--text-secondary); }
+        .log-warn { color: #ffaa00; }
+
+        .terminal-input {
+            padding: 20px;
+            border-top: 1px solid rgba(0, 217, 255, 0.3);
+            background: linear-gradient(180deg, transparent, rgba(0, 217, 255, 0.02));
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .input-prompt {
+            color: var(--glow-green);
+            font-weight: bold;
+            flex-shrink: 0;
+            text-shadow: 0 0 8px rgba(57, 255, 20, 0.5);
+        }
+
+        .input-field {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            outline: none;
+            text-shadow: 0 0 4px rgba(0, 217, 255, 0.3);
+        }
+
+        .input-field::placeholder {
+            color: rgba(0, 217, 255, 0.3);
+        }
+
+        .file-content {
+            background: rgba(0, 217, 255, 0.02);
+            border-left: 3px solid var(--glow-cyan);
+            padding: 12px 16px;
+            margin: 8px 0;
+            color: var(--text-primary);
+            line-height: 1.8;
+        }
+
+        .sector-map {
+            margin: 8px 0;
+            padding: 12px;
+            background: rgba(165, 0, 255, 0.05);
+            border: 1px dashed rgba(165, 0, 255, 0.3);
+            font-size: 12px;
+        }
+
+        .sector-active { color: var(--text-secondary); }
+        .sector-locked { color: #ffaa00; }
+        .sector-dead { color: var(--text-danger); }
+
+        .glow-text {
+            text-shadow: 
+                0 0 5px currentColor,
+                0 0 10px currentColor,
+                0 0 20px currentColor;
+        }
+
+        @keyframes decryptFlash {
+            0%, 100% { 
+                color: var(--text-primary);
+                text-shadow: 0 0 5px rgba(0, 217, 255, 0.5);
+            }
+            50% { 
+                color: var(--glow-green);
+                text-shadow: 0 0 15px rgba(57, 255, 20, 0.8);
+            }
+        }
+
+        .boot-section {
+            margin: 16px 0;
+            padding: 8px 0;
+            border-left: 2px solid var(--glow-cyan);
+            padding-left: 12px;
+        }
+
+        .boot-header {
+            color: var(--glow-cyan);
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(0, 217, 255, 0.4);
+            margin-bottom: 8px;
+        }
+
+        .terminal:focus-within {
+            box-shadow: 
+                0 0 30px rgba(0, 217, 255, 0.4),
+                0 0 60px rgba(165, 0, 255, 0.2),
+                inset 0 0 20px rgba(0, 217, 255, 0.08);
+        }
+
+        @media (max-width: 768px) {
+            .terminal {
+                width: 98%;
+                height: 90vh;
+                border-width: 1px;
+            }
+
+            .terminal-output {
+                font-size: 12px;
+                padding: 16px;
+            }
+
+            .input-field {
+                font-size: 12px;
+            }
+
+            .terminal-header {
+                font-size: 10px;
+                padding: 12px 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="screen-container">
+        <div class="glow-bg"></div>
+        <div class="flicker"></div>
+        <div class="scanlines"></div>
+
+        <div class="terminal">
+            <div class="terminal-header">
+                <span class="header-title">⬤ NEXUS NODE CONSOLE</span>
+                <span class="header-status">● RECOVERY MODE</span>
+            </div>
+
+            <div class="terminal-output" id="terminalOutput"></div>
+
+            <div class="terminal-input">
+                <span class="input-prompt" id="prompt">root@nexus:/root $</span>
+                <input 
+                    type="text" 
+                    class="input-field" 
+                    id="commandInput" 
+                    placeholder="Enter command..."
+                    autocomplete="off"
+                    spellcheck="false"
+                >
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const terminal = {
+            output: document.getElementById('terminalOutput'),
+            input: document.getElementById('commandInput'),
+            prompt: document.getElementById('prompt'),
+            
+            state: {
+                booted: false,
+                filesDetected: false,
+                loggedIn: false,
+                waitingForLogin: false,
+                waitingForPassword: false,
+                currentUser: null,
+                currentPath: '/root',
+                language: 'en',
+                waitingForConfirmation: false,
+                confirmationCallback: null,
+            },
+
+            history: [],
+            historyIndex: -1,
+
+            // Language system
+            lang: {
+                en: {
+                    bootSeq: [
+                        { text: '', delay: 500 },
+                        { text: '∞ NEXUS NODE :: RECOVERY MODE ∞', delay: 100, type: 'system' },
+                        { text: '', delay: 200 },
+                        { text: 'Initializing memory sectors...', delay: 50 },
+                        { text: 'Mounting damaged partitions...', delay: 100 },
+                        { text: 'Scanning disk geometry...', delay: 80 },
+                        { text: 'Decrypting memory sectors...', delay: 120 },
+                        { text: 'Recovering user session...', delay: 100 },
+                        { text: '', delay: 300 },
+                        { text: 'Attempting automatic authentication...', delay: 80 },
+                        { text: 'FAILED', delay: 100, type: 'error' },
+                        { text: '', delay: 800 },
+                        { text: '⚠ Recovered note found', delay: 100, type: 'warn' },
+                        { text: '', delay: 200 },
+                        { text: 'AVAILABLE FILE:', delay: 50, type: 'system' },
+                        { text: '  > memo.txt', delay: 100 },
+                        { text: '', delay: 300 },
+                        { text: 'Dig deeper to find the rest.', delay: 50, type: 'info' },
+                        { text: 'i heard it\'s sector related. Just that.', delay: 100, type: 'warn' },
+                        { text: '', delay: 100 },
+                    ],
+                    help: `
+═══════════════════════════════════════════════════════════
+  NEXUS NODE RECOVERY TERMINAL - COMMAND REFERENCE
+═══════════════════════════════════════════════════════════
+
+NAVIGATION:
+  ls [dir]           - List directory contents
+  cd <dir>           - Change directory
+  pwd                - Show current directory
+
+FILE OPERATIONS:
+  cat <file>         - Display file contents
+  open <file>        - Alias for cat
+
+SYSTEM:
+  login              - Initiate login sequence
+  whoami             - Show current user
+  status             - Show system status
+  clear              - Clear terminal screen
+  help               - Show this message
+  hint               - Get a hint (spoiler warning)
+  password_show      - Reveal login credentials
+  lang en            - Switch to English
+  lang pl            - Switch to Polish
+
+NAVIGATION EXAMPLES:
+  cd recovered       - Enter recovered directory
+  cd logs            - Enter logs subdirectory
+  cd /root           - Return to root directory
+  cd ..              - Go to parent directory
+
+EXPLORATION:
+  Read files carefully. Clues are everywhere.
+  Some files are hidden (. prefix).
+  Some are Easter eggs.
+
+═══════════════════════════════════════════════════════════`,
+                    hint: `
+⚠ HINT SYSTEM ⚠
+
+Clues so far:
+1. memo.txt mentions: "password changed after BLACKOUT incident"
+2. Boot message says: "sector related"
+3. You should explore /root/recovered/
+
+Look for files about BLACKOUT event.
+Check auth logs and sector status.
+The password is literally mentioned in files.`,
+                    passwordConfirm: 'Reveal credentials? (y/n) This might spoil the puzzle:',
+                    credentials: {
+                        user: 'ghost',
+                        pass: 'blackout'
+                    },
+                    credsRevealed: `
+CREDENTIALS REVEALED:
+  username: ghost
+  password: blackout
+
+Go ahead and login. Or keep exploring!`,
+                    credsAborted: 'Good call. Keep digging!',
+                },
+                pl: {
+                    bootSeq: [
+                        { text: '', delay: 500 },
+                        { text: '∞ NEXUS NODE :: TRYB ODZYSKIWANIA ∞', delay: 100, type: 'system' },
+                        { text: '', delay: 200 },
+                        { text: 'Inicjalizacja sektorów pamięci...', delay: 50 },
+                        { text: 'Montowanie uszkodzonych partycji...', delay: 100 },
+                        { text: 'Skanowanie geometrii dysku...', delay: 80 },
+                        { text: 'Odszyfrowywanie sektorów pamięci...', delay: 120 },
+                        { text: 'Odzyskiwanie sesji użytkownika...', delay: 100 },
+                        { text: '', delay: 300 },
+                        { text: 'Próba automatycznej autoryzacji...', delay: 80 },
+                        { text: 'NIEUDANA', delay: 100, type: 'error' },
+                        { text: '', delay: 800 },
+                        { text: '⚠ Znaleziono odzyskaną notatkę', delay: 100, type: 'warn' },
+                        { text: '', delay: 200 },
+                        { text: 'DOSTĘPNY PLIK:', delay: 50, type: 'system' },
+                        { text: '  > memo.txt', delay: 100 },
+                        { text: '', delay: 300 },
+                        { text: 'Zbadaj system głębiej, żeby znaleźć resztę.', delay: 50, type: 'info' },
+                        { text: 'Słyszałem, że to coś sektorami. Tyle mogę powiedzieć.', delay: 100, type: 'warn' },
+                        { text: '', delay: 100 },
+                    ],
+                    help: `
+═══════════════════════════════════════════════════════════
+  NEXUS NODE - TERMINAL ODZYSKIWANIA - DOSTĘPNE KOMENDY
+═══════════════════════════════════════════════════════════
+
+NAWIGACJA:
+  ls [dir]           - Wyświetl zawartość katalogu
+  cd <dir>           - Zmień katalog
+  pwd                - Pokaż bieżącą ścieżkę
+
+OPERACJE NA PLIKACH:
+  cat <plik>         - Wyświetl zawartość pliku
+  open <plik>        - Alias dla cat
+
+SYSTEM:
+  login              - Zaloguj się
+  whoami             - Pokaż bieżącego użytkownika
+  status             - Pokaż status systemu
+  clear              - Wyczyść ekran
+  help               - Wyświetl tę wiadomość
+  hint               - Otrzymaj wskazówkę
+  password_show      - Ujawnij dane logowania
+  lang en            - Przełącz na angielski
+  lang pl            - Przełącz na polski
+
+PRZYKŁADY NAWIGACJI:
+  cd recovered       - Wejdź do katalogu recovered
+  cd logs            - Wejdź do poddirectory logs
+  cd /root           - Powróć do katalogu głównego
+  cd ..              - Przejdź do katalogu nadrzędnego
+
+EKSPLORACJA:
+  Czytaj pliki uważnie. Wskazówki są wszędzie.
+  Niektóre pliki są ukryte (prefix .)
+  Niektóre to Easter eggi.
+
+═══════════════════════════════════════════════════════════`,
+                    hint: `
+⚠ SYSTEM WSKAZÓWEK ⚠
+
+Dotychczasowe wskazówki:
+1. memo.txt mówi: "hasło zmieniono po zdarzeniu BLACKOUT"
+2. Boot wskazuje: "coś z sektorami"
+3. Powinieneś zbadać /root/recovered/
+
+Szukaj plików o zdarzeniu BLACKOUT.
+Sprawdź logi autoryzacji i status sektorów.
+Hasło jest dosłownie wymienione w plikach.`,
+                    passwordConfirm: 'Ujawnić dane logowania? (t/n) To może zepsuć puzzle:',
+                    credentials: {
+                        user: 'ghost',
+                        pass: 'blackout'
+                    },
+                    credsRevealed: `
+DANE LOGOWANIA UJAWNIONE:
+  użytkownik: ghost
+  hasło: blackout
+
+Zaloguj się. Lub kontynuuj eksplorację!`,
+                    credsAborted: 'Mądrze. Szukaj dalej!',
+                }
+            },
+
+            dirs: {
+                '/root': {
+                    type: 'dir',
+                    contents: ['memo.txt', 'recovered']
+                },
+                '/root/recovered': {
+                    type: 'dir',
+                    contents: ['auth.log', 'sectors.map', 'node-status.log', 'logs', 'data', '.hidden_note']
+                },
+                '/root/recovered/logs': {
+                    type: 'dir',
+                    contents: ['system.log', 'access.log', 'incident_report.txt']
+                },
+                '/root/recovered/data': {
+                    type: 'dir',
+                    contents: ['config.bin', 'keys.enc', 'README.txt', '.easter_egg_old_notes']
+                }
+            },
+
+            files: {
+                '/root/memo.txt': `if this terminal boots again,
+tell V to stop renaming the access IDs.
+
+username is still the old one.
+password changed after BLACKOUT incident.
+
+- K`,
+                '/root/recovered/auth.log': `[AUTH_001] 2089-03-01 12:15:33 | ghost      | LOGIN        | SUCCESS   | node: district-07
+[AUTH_002] 2089-03-01 12:16:45 | V          | FILE_ACCESS  | DENIED    | sectors.map
+[AUTH_003] 2089-03-05 08:22:11 | ghost      | SECTOR_QUERY | PARTIAL   | BLACKOUT
+[AUTH_004] 2089-03-12 14:30:22 | ghost      | CONFIG_EDIT  | SUCCESS   | access_IDs
+[AUTH_005] 2089-03-15 04:23:12 | ghost      | LOGOUT       | EMERGENCY | reason: BLACKOUT
+[AUTH_006] 2089-03-15 04:24:00 | system     | LOCKDOWN     | ACTIVE    | sector: BLACKOUT`,
+                '/root/recovered/sectors.map': `SECTOR STATUS
+
+NEON       :: ACTIVE     [████████████████]
+BLACKOUT   :: LOCKED     [████░░░░░░░░░░░░] << Session Locked
+VOID-7     :: DEAD       [░░░░░░░░░░░░░░░░]
+
+Note: LOCKED status refers to sector access protocol
+Not a corrupted file - intentional security measure`,
+                '/root/recovered/node-status.log': `=== NEXUS NODE STATUS REPORT ===
+
+Active User Sessions:
+  [ACTIVE]   ghost     :: district-07    :: encrypted
+  [LOCKED]   blackout  :: sealed_sector  :: NO_ACCESS
+
+Sector BLACKOUT Status:
+  State: LOCKED (admin override required)
+  Last Access: 2089-03-15 04:23:12
+  Trigger: Emergency Protocol
+  
+Access Attempts Since Lockdown: 7
+Result: All Denied - Re-Authentication Required`,
+                '/root/recovered/.hidden_note': `[DELETED BUT RECOVERED]
+
+Don't forget - BLACKOUT protocol activated.
+The sector is locked for a reason.
+
+Password changed after the incident.
+But ghost is still the operator.
+
+- K`,
+                '/root/recovered/logs/system.log': `[2089-03-15 04:22:11] System boot initiated
+[2089-03-15 04:22:45] Sector NEON verified - ACTIVE
+[2089-03-15 04:23:12] ALERT: BLACKOUT event detected
+[2089-03-15 04:23:34] Emergency shutdown protocols activated
+[2089-03-15 04:23:45] Sector BLACKOUT quarantined
+[2089-03-15 04:23:50] Recovery mode initiated`,
+                '/root/recovered/logs/access.log': `[AUTH_001] 2089-03-01 12:15:33 | ghost      | LOGIN        | SUCCESS   | node: district-07
+[AUTH_002] 2089-03-01 12:16:45 | V          | FILE_ACCESS  | DENIED    | file: sectors.map
+[AUTH_003] 2089-03-05 08:22:11 | ghost      | SECTOR_QUERY | PARTIAL   | sector: BLACKOUT
+[AUTH_004] 2089-03-12 14:30:22 | ghost      | CONFIG_EDIT  | SUCCESS   | target: access_IDs
+[AUTH_005] 2089-03-15 04:23:12 | ghost      | LOGOUT       | EMERGENCY | reason: BLACKOUT
+[AUTH_006] 2089-03-15 04:24:00 | system     | LOCKDOWN     | ACTIVE    | affected: BLACKOUT_SECTOR`,
+                '/root/recovered/logs/incident_report.txt': `INCIDENT REPORT :: BLACKOUT PROTOCOL
+Date: 2089-03-15 | Severity: CRITICAL
+
+Timeline:
+04:23:12 - BLACKOUT event triggered
+04:23:34 - All BLACKOUT sector operations ceased  
+04:23:50 - Sector automatically sealed
+04:24:00 - System entered safe mode
+
+Status: LOCKED (protection measure, not corruption)
+User 'ghost' had active session when triggered
+Recovery requires re-establishing authentication`,
+                '/root/recovered/data/config.bin': `[BINARY DATA - ENCRYPTED]
+SIZE: 4096 bytes
+CHECKSUM: a7f3e9c2b1d5f8e4
+STATUS: CORRUPTED
+
+Partial Recovery:
+access_id_001: [encrypted]
+access_id_002: [encrypted]
+access_id_003: RENAMED_BY_V [encrypted]
+session_tokens: [unrecoverable]`,
+                '/root/recovered/data/keys.enc': `[ENCRYPTED KEY MATERIAL]
+ALGORITHM: AES-256
+STATUS: LOCKED
+KEY_HASH: 7f3e9c2b1d5f8e4a
+
+NOTE: Used to lock BLACKOUT sector
+Recovery requires proper authentication`,
+                '/root/recovered/data/.easter_egg_old_notes': `[CORRUPTED TEXT FILE - PARTIALLY RECOVERED]
+
+haha - found your old codebase
+why would you store plaintext passwords?
+oh right, you didn't. smart.
+
+everyone knows BLACKOUT was the shutdown
+lol at least K had the sense to keep things encrypted
+
+- V
+(yeah the one who tried accessing your files)`,
+                '/root/recovered/data/README.txt': `RECOVERY NOTES
+
+If you're reading this:
+1. System crashed during BLACKOUT incident
+2. Your credentials are still valid
+3. LOCKED status for BLACKOUT sector is expected
+4. It's a safety feature, not corruption
+
+Welcome back, ghost.
+- Recovery System`
+            },
+
+            init() {
+                this.input.addEventListener('keydown', (e) => this.handleKeydown(e));
+                this.input.focus();
+                this.startBootSequence();
+            },
+
+            async startBootSequence() {
+                this.prompt.textContent = 'root@nexus:/root $';
+                
+                const bootLines = this.lang[this.state.language].bootSeq;
+
+                for (const line of bootLines) {
+                    await this.sleep(line.delay);
+                    if (line.text) {
+                        this.addLine(line.text, line.type || 'system');
+                    } else {
+                        this.addLine('');
+                    }
+                }
+
+                this.state.booted = true;
+                this.state.filesDetected = true;
+                this.input.focus();
+            },
+
+            handleKeydown(e) {
+                if (this.state.waitingForConfirmation) {
+                    if (e.key.toLowerCase() === 'y' || e.key.toLowerCase() === 't') {
+                        e.preventDefault();
+                        this.addLine('Y', 'info');
+                        if (this.state.confirmationCallback) {
+                            this.state.confirmationCallback(true);
+                        }
+                        this.state.waitingForConfirmation = false;
+                        this.state.confirmationCallback = null;
+                    } else if (e.key.toLowerCase() === 'n') {
+                        e.preventDefault();
+                        this.addLine('N', 'info');
+                        if (this.state.confirmationCallback) {
+                            this.state.confirmationCallback(false);
+                        }
+                        this.state.waitingForConfirmation = false;
+                        this.state.confirmationCallback = null;
+                    }
+                    return;
+                }
+
+                if (this.state.waitingForLogin) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const user = this.input.value.trim();
+                        this.processLogin(user);
+                        this.input.value = '';
+                    }
+                    return;
+                }
+
+                if (this.state.waitingForPassword) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const password = this.input.value.trim();
+                        this.processPassword(password);
+                        this.input.value = '';
+                    }
+                    return;
+                }
+
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const command = this.input.value.trim();
+                    this.executeCommand(command);
+                    this.history.push(command);
+                    this.historyIndex = this.history.length;
+                    this.input.value = '';
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (this.historyIndex > 0) {
+                        this.historyIndex--;
+                        this.input.value = this.history[this.historyIndex];
+                    }
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (this.historyIndex < this.history.length - 1) {
+                        this.historyIndex++;
+                        this.input.value = this.history[this.historyIndex];
+                    } else if (this.historyIndex === this.history.length - 1) {
+                        this.historyIndex++;
+                        this.input.value = '';
+                    }
+                }
+            },
+
+            normalizePath(inputPath) {
+                let path = inputPath.trim();
+                
+                if (!path.startsWith('/')) {
+                    if (path === '.') {
+                        return this.state.currentPath;
+                    } else if (path === '..') {
+                        const parts = this.state.currentPath.split('/').filter(p => p);
+                        if (parts.length > 0) {
+                            return '/' + parts.slice(0, -1).join('/');
+                        }
+                        return '/root';
+                    } else {
+                        path = this.state.currentPath + '/' + path;
+                    }
+                }
+                
+                path = path.replace(/\/+/g, '/');
+                if (path !== '/root' && path !== '/') {
+                    path = path.replace(/\/$/, '');
+                }
+                
+                return path;
+            },
+
+            listDirectory(pathInput = null) {
+                const path = pathInput ? this.normalizePath(pathInput) : this.state.currentPath;
+                
+                if (!this.dirs[path]) {
+                    this.addLine(`ls: cannot access '${pathInput}': No such file or directory`, 'error');
+                    return;
+                }
+                
+                const dir = this.dirs[path];
+                if (dir.type !== 'dir') {
+                    this.addLine(`ls: '${pathInput}' is not a directory`, 'error');
+                    return;
+                }
+                
+                this.addLine('');
+                const items = dir.contents;
+                
+                // Separate hidden and normal files
+                const hiddenItems = items.filter(item => item.startsWith('.'));
+                const visibleItems = items.filter(item => !item.startsWith('.'));
+                
+                // Show visible files first
+                for (const item of visibleItems) {
+                    const itemPath = path === '/root' ? `/root/${item}` : `${path}/${item}`;
+                    const isDir = this.dirs[itemPath] && this.dirs[itemPath].type === 'dir';
+                    const marker = isDir ? '/' : '';
+                    const display = item + marker;
+                    
+                    if (isDir) {
+                        this.addLine(`  ${display}`, 'success');
+                    } else {
+                        this.addLine(`  ${display}`, 'info');
+                    }
+                }
+                
+                // Show hidden files if any exist
+                if (hiddenItems.length > 0) {
+                    this.addLine('  (hidden files detected)', 'warn');
+                    for (const item of hiddenItems) {
+                        const itemPath = path === '/root' ? `/root/${item}` : `${path}/${item}`;
+                        const isDir = this.dirs[itemPath] && this.dirs[itemPath].type === 'dir';
+                        const marker = isDir ? '/' : '';
+                        const display = item + marker;
+                        
+                        if (isDir) {
+                            this.addLine(`  ${display}`, 'success');
+                        } else {
+                            this.addLine(`  ${display}`, 'warn');
+                        }
+                    }
+                }
+                
+                this.addLine('');
+            },
+
+            changeDirectory(pathInput) {
+                if (!pathInput || pathInput.trim() === '') {
+                    this.addLine('cd: missing argument', 'error');
+                    return;
+                }
+                
+                const path = this.normalizePath(pathInput);
+                
+                if (!this.dirs[path]) {
+                    this.addLine(`cd: '${pathInput}': No such file or directory`, 'error');
+                    return;
+                }
+                
+                const dir = this.dirs[path];
+                if (dir.type !== 'dir') {
+                    this.addLine(`cd: '${pathInput}': Not a directory`, 'error');
+                    return;
+                }
+                
+                this.state.currentPath = path;
+                this.updatePrompt();
+            },
+
+            updatePrompt() {
+                this.prompt.textContent = `${this.state.currentUser || 'root'}@nexus:${this.state.currentPath} $`;
+            },
+
+            async readFile(fileInput) {
+                if (!fileInput || fileInput.trim() === '') {
+                    this.addLine('cat: missing argument', 'error');
+                    return;
+                }
+                
+                const filePath = this.normalizePath(fileInput);
+                
+                if (!this.files[filePath]) {
+                    this.addLine(`cat: ${fileInput}: No such file or directory`, 'error');
+                    return;
+                }
+                
+                this.addLine('');
+                const content = this.files[filePath];
+                const lines = content.split('\n');
+                
+                for (const line of lines) {
+                    await this.sleep(30);
+                    this.addLine(line, 'info');
+                }
+                
+                this.addLine('');
+            },
+
+            showHelp() {
+                const help = `
+═══════════════════════════════════════════════════════════
+  NEXUS NODE RECOVERY TERMINAL - COMMAND REFERENCE
+═══════════════════════════════════════════════════════════
+
+NAVIGATION:
+  ls [dir]           - List directory contents
+  cd <dir>           - Change directory
+  pwd                - Show current directory
+
+FILE OPERATIONS:
+  cat <file>         - Display file contents
+  open <file>        - Alias for cat
+  list               - List recovered files (legacy)
+
+SYSTEM:
+  login              - Initiate login sequence
+  whoami             - Show current user
+  status             - Show system status
+  clear              - Clear terminal screen
+  help               - Show this message
+
+NAVIGATION EXAMPLES:
+  cd recovered       - Enter recovered directory
+  cd logs            - Enter logs subdirectory
+  cd /root           - Return to root directory
+  cd ..              - Go to parent directory
+
+EXPLORATION:
+  Read files carefully. Clues are everywhere.
+  Some files are hidden (. prefix).
+  Some are Easter eggs.
+
+═══════════════════════════════════════════════════════════`;
+                this.addLine(help, 'info');
+            },
+
+            listFiles() {
+                const list = `
+RECOVERED FILES:
+
+  memo.txt              [TEXT]
+  auth.log              [LOG]
+  sectors.map           [MAP]
+  node-status.log       [STATUS]
+  recovered/logs/       [DIR]
+  recovered/data/       [DIR]
+`;
+                this.addLine(list.trim(), 'info');
+            },
+
+            async initiateLogin() {
+                this.addLine('');
+                this.addLine('Initiating login sequence...', 'warn');
+                await this.sleep(300);
+                
+                this.state.waitingForLogin = true;
+                this.addLine('LOGIN: ', 'system');
+                this.input.placeholder = '';
+                this.prompt.textContent = '';
+                this.input.focus();
+            },
+
+            async processLogin(user) {
+                this.addLine(user, 'info');
+                
+                if (user !== 'ghost') {
+                    this.addLine('');
+                    this.addLine('ACCESS DENIED', 'error');
+                    this.addLine('Invalid credentials', 'error');
+                    await this.sleep(500);
+                    this.resetLogin();
+                    return;
+                }
+
+                this.state.currentUser = user;
+                this.state.waitingForLogin = false;
+                this.state.waitingForPassword = true;
+                
+                await this.sleep(200);
+                this.addLine('PASSWORD: ', 'system');
+                this.input.focus();
+            },
+
+            async processPassword(password) {
+                this.addLine('●●●●●●●●●●', 'info');
+                
+                if (password !== 'blackout') {
+                    this.addLine('');
+                    this.addLine('ACCESS DENIED', 'error');
+                    this.addLine('Invalid credentials', 'error');
+                    await this.sleep(500);
+                    this.resetLogin();
+                    return;
+                }
+
+                this.state.waitingForPassword = false;
+                
+                await this.sleep(300);
+                this.addLine('');
+                this.addLine('Verifying credentials...', 'warn');
+                await this.sleep(400);
+                
+                this.addLine('Decrypting session data...', 'warn');
+                for (let i = 0; i < 3; i++) {
+                    await this.sleep(150);
+                    this.addLine('█░░░░░░░░░░░░░░░░░░ 5%', 'warn');
+                    await this.sleep(150);
+                    this.addLine('███████░░░░░░░░░░░░ 35%', 'warn');
+                    await this.sleep(150);
+                    this.addLine('███████████████░░░░░ 80%', 'warn');
+                    await this.sleep(150);
+                    this.addLine('████████████████████ 100%', 'success');
+                }
+                
+                await this.sleep(600);
+                this.addLine('');
+                this.addLine('ACCESS GRANTED', 'success');
+                
+                await this.sleep(400);
+                this.addLine('');
+                this.addLine('╔════════════════════════════════╗', 'success');
+                this.addLine('║  WELCOME BACK, OPERATOR        ║', 'success');
+                this.addLine('║  NEXUS NODE STATUS: ONLINE     ║', 'success');
+                this.addLine('╚════════════════════════════════╝', 'success');
+                
+                this.state.loggedIn = true;
+                this.state.waitingForPassword = false;
+                
+                await this.sleep(500);
+                this.resetLogin();
+            },
+
+            resetLogin() {
+                this.state.waitingForLogin = false;
+                this.state.waitingForPassword = false;
+                this.input.placeholder = 'Enter command...';
+                this.updatePrompt();
+                this.input.focus();
+            },
+
+            async executeCommand(command) {
+                const cmd = command.toLowerCase().trim();
+                const parts = cmd.split(/\s+/);
+                const baseCmd = parts[0];
+                const args = parts.slice(1).join(' ');
+                
+                if (!command) return;
+
+                this.addLine(`${this.state.currentUser || 'root'}@nexus:${this.state.currentPath} $ ${command}`, 'info');
+
+                if (!this.state.booted) {
+                    this.addLine('System still booting...', 'error');
+                    return;
+                }
+
+                switch (baseCmd) {
+                    case 'help':
+                        this.showHelp();
+                        break;
+                    case 'ls':
+                        this.listDirectory(args || '');
+                        break;
+                    case 'cd':
+                        this.changeDirectory(args);
+                        break;
+                    case 'cat':
+                    case 'open':
+                        await this.readFile(args);
+                        break;
+                    case 'login':
+                    case 'su':
+                        await this.initiateLogin();
+                        break;
+                    case 'list':
+                        this.listFiles();
+                        break;
+                    case 'clear':
+                    case 'cls':
+                        this.clear();
+                        break;
+                    case 'whoami':
+                        if (this.state.loggedIn) {
+                            this.addLine(this.state.currentUser, 'success');
+                        } else {
+                            this.addLine('not logged in', 'error');
+                        }
+                        break;
+                    case 'pwd':
+                        this.addLine(this.state.currentPath, 'info');
+                        break;
+                    case 'status':
+                        this.showStatus();
+                        break;
+                    default:
+                        this.addLine(`${baseCmd}: command not found`, 'error');
+                }
+
+                this.scrollToBottom();
+            },
+
+            showStatus() {
+                const status = `
+SYSTEM STATUS:
+
+  Boot Status        :: COMPLETE
+  Recovery Mode      :: ACTIVE
+  Files Detected     :: 7
+  Current Directory  :: ${this.state.currentPath}
+  Authentication     :: ${this.state.loggedIn ? 'VERIFIED' : 'PENDING'}
+  Session User       :: ${this.state.currentUser || 'anonymous'}
+  Session Status     :: ${this.state.loggedIn ? 'ACTIVE' : 'INACTIVE'}
+  Memory Usage       :: 45%
+  CPU Load          :: 12%
+  
+Uptime: 0h 2m 34s
+`;
+                this.addLine(status.trim(), 'info');
+            },
+
+            clear() {
+                this.output.innerHTML = '';
+            },
+
+            addLine(text, type = 'info') {
+                const line = document.createElement('div');
+                line.className = `line log-${type}`;
+                
+                const lineCount = this.output.children.length;
+                line.style.animationDelay = `${lineCount * 0.02}s`;
+                
+                line.textContent = text;
+                this.output.appendChild(line);
+            },
+
+            scrollToBottom() {
+                this.output.scrollTop = this.output.scrollHeight;
+            },
+
+            sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+        };
+
+        terminal.init();
+    </script>
+</body>
+</html>
