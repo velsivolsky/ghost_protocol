@@ -23,6 +23,7 @@ export function render() {
   drawCameraFov();
   drawGuardVision();
   drawDevices(width, height);
+  drawTerminalScanHighlights(width, height);
   drawDoorPreviewLinks();
   drawPlayer();
   drawOverlays(width, height);
@@ -487,6 +488,47 @@ function drawOverlays(width, height) {
     ctx.font = '9px monospace';
     ctx.fillText(`HAKOWANIE TERMINALA: ${Math.ceil(G.hackProgress)}% — NIE RUSZAJ SIĘ`, 8, height - 8);
   }
+}
+
+function drawTerminalScanHighlights(width, height) {
+  const highlights = G.terminalRuntime?.scanHighlights;
+
+  if (!highlights?.length) {
+    return;
+  }
+
+  const ctx = G.ctx;
+  ctx.save();
+
+  for (const item of highlights) {
+    const px = (item.x - G.cam.x) * TILE;
+    const py = (item.y - G.cam.y) * TILE;
+
+    if (px < -TILE || py < -TILE || px > width + TILE || py > height + TILE) {
+      continue;
+    }
+
+    const color = getHighlightColor(item.type);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(px + 1.5, py + 1.5, TILE - 3, TILE - 3);
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = color;
+    ctx.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+function getHighlightColor(type) {
+  if (type === 'wterm' || type === 'door') return '#ffd166';
+  if (type === 'cam') return '#ff6b8a';
+  if (type === 'guard') return '#ffd700';
+  if (type === 'drone') return '#54c6ff';
+  if (type === 'tech') return '#c7d2ff';
+  if (type === 'mainterm' || type === 'sterm') return '#00ff9f';
+  return '#7ac8ff';
 }
 
 function drawVisionCone(x, y, angle, fov, range, color) {

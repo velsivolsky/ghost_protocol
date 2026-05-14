@@ -1,6 +1,10 @@
 import { G, initWaveState } from './state.js';
 import { HUD_HEIGHT } from './constants.js';
-import { generateMultiFloorMap } from '../world/generator.js';
+import { generateMultiFloorMap, generateTutorialMap } from '../world/generator.js';
+import { createCamera } from '../entities/camera.js';
+import { createGuard } from '../entities/guard.js';
+import { createDrone } from '../entities/drone.js';
+import { createTechnician } from '../entities/technician.js';
 import { closeCtx } from '../systems/hacking.js';
 import { bindInput } from '../systems/input.js';
 import { resetOverlays, updateMissionText } from '../systems/mission.js';
@@ -36,6 +40,8 @@ import {
 import { loadDataFragments, isProbabilityUnlocked, unlockProbability, saveDataFragments, ensureDataFragmentState, isDecryptorUnlocked, unlockDecryptor } from '../systems/dataFragments.js';
 import { renderDataBoard } from '../systems/ui.js';
 import { focusMenuTerminalInput, initMenuTerminal, syncMenuTerminalStatus } from '../systems/menuTerminal.js';
+import { initTerminalRuntime, resetTerminalRuntime } from '../systems/terminalRuntime.js';
+import { resetTutorialSession, startTutorialSession } from '../systems/tutorial.js';
 
 let started = false;
 let pendingStart = { wave: 1, credits: 0 };
@@ -619,9 +625,10 @@ function showMainMenu(fromRun = false) {
 
   G.menuActive = true;
 
-  if (fromRun) {
-    startTerminalStream();
-  }
+  const overlay = document.getElementById('terminal-stream-overlay');
+  const container = document.getElementById('ts-lines');
+  if (overlay) overlay.classList.remove('active');
+  if (container) container.innerHTML = '';
 
   renderStartMenu();
   syncMenuTerminalStatus();
@@ -692,9 +699,79 @@ function startSelectedRunFromMap(runId) {
   startSelectedRun(runId);
 }
 
+function startTutorialRun() {
+  const map = generateTutorialMap();
+  const devices = createTutorialDevices(map);
+
+  hideMainMenu();
+  initWaveState({ wave: 1, credits: 0, map, devices });
+  G.floors = [map];
+  G.code = null;
+  G.codeFound = false;
+  G.floor = 1;
+  G.floorCount = 1;
+  resetAudio();
+  resetQuickHackState();
+  resetNetworkBreachState();
+  resetTerminalRuntime();
+  resetTutorialSession();
+  startTutorialSession();
+  resetOverlays();
+  clearLog();
+  syncZoneLabel();
+  updateMissionText();
+  refreshHUD();
+  rebuildList();
+  closeCtx();
+  log('Tryb treningowy online.', 'ok');
+  log('Wpisz tutorial lub help doors w live terminalu.', 'ok');
+  log('Na mapie masz drzwi, panele, kamery, drona, technika i terminale.', 'ok');
+  render();
+}
+
+function createTutorialDevices(map) {
+  const camRoom = { x: 24, y: 1, w: 10, h: 8 };
+  const guardRoom = { x: 14, y: 12, w: 8, h: 10 };
+  const droneRoom = { x: 25, y: 14, w: 9, h: 8 };
+  const techRoom = { x: 1, y: 14, w: 10, h: 9 };
+
+  const cam = createCamera(0, camRoom);
+  cam.id = 'cam_0';
+  cam.x = 27;
+  cam.y = 6;
+  cam.desc = 'Kamera Treningowa';
+
+  const guard = createGuard(0, guardRoom, 1);
+  guard.id = 'guard_0';
+  guard.x = 19;
+  guard.y = 16;
+  guard.desc = 'Strażnik Treningowy';
+
+  const drone = createDrone(0, droneRoom, 1);
+  drone.id = 'drone_0';
+  drone.ocx = 29;
+  drone.ocy = 18;
+  drone.x = 29;
+  drone.y = 18;
+  drone.desc = 'Dron Treningowy';
+
+  const tech = createTechnician(0, techRoom);
+  tech.id = 'tech_0';
+  tech.x = 8;
+  tech.y = 18;
+  tech.homeX = 8;
+  tech.homeY = 18;
+  tech.patrolA = { x: 5.5, y: 16.5 };
+  tech.patrolB = { x: 10.5, y: 20.5 };
+  tech.desc = 'Technik Treningowy';
+
+  return [cam, guard, drone, tech];
+}
+
 export function boot() {
   primeAudioSettings();
   bindUI();
+  initTerminalRuntime();
   loadDataFragments();
   initAudio();
   initNetworkBreachBridge();
@@ -735,6 +812,7 @@ export function boot() {
   window.SWITCH_START_MENU_TAB = switchStartMenuTab;
   window.START_SELECTED_RUN = startSelectedRun;
   window.START_SELECTED_RUN_FROM_MAP = startSelectedRunFromMap;
+  window.START_TUTORIAL = startTutorialRun;
   window.MENU_BUY_QH = buyQuickHackFromMenu;
   window.MENU_EQUIP_QH = equipQuickHackFromMenu;
   window.MENU_BUY_BREACH = buyBreachActionFromMenu;
@@ -772,6 +850,7 @@ export function startRun(wave, credits) {
   resetAudio();
   resetQuickHackState();
   resetNetworkBreachState();
+  resetTerminalRuntime();
   resetOverlays();
   clearLog();
   syncZoneLabel();

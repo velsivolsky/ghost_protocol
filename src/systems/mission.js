@@ -9,6 +9,11 @@ export function updateMissionText() {
     return;
   }
 
+  if (G.tutorial?.active) {
+    G.dom.mission.innerHTML = getTutorialMissionText();
+    return;
+  }
+
   const floorLabel = `PIĘTRO ${G.floor}/${G.floorCount}`;
   const stairHint = G.stairHintActive
     ? ' | <span style="color:#7ac8ff">SCHODY: kliknij kafelek, aby przejść</span>'
@@ -21,6 +26,60 @@ export function updateMissionText() {
   } else {
     G.dom.mission.innerHTML = `${floorLabel} | EXFILTRACJA: <span style="color:#ff3a5c">wróć do wejścia ▲</span>${stairHint}`;
   }
+}
+
+function getTutorialMissionText() {
+  const step = G.tutorial?.step || 0;
+
+  if (step === 0) {
+    return 'TUTORIAL | Poruszaj się WASD do podświetlonego obiektu';
+  }
+
+  if (step === 1) {
+    return 'TUTORIAL | Otwórz realtime terminal klawiszem TAB';
+  }
+
+  if (step === 2) {
+    return 'TUTORIAL | Wpisz <b>tutorial</b> albo <b>help basics</b>';
+  }
+
+  if (step === 3) {
+    return 'TUTORIAL | Zrób skan: <b>scan local</b>';
+  }
+
+  if (step === 4) {
+    return 'TUTORIAL | Otwórz drzwi: <b>connect panel_1</b> -> <b>unlock</b> -> <b>disconnect</b>';
+  }
+
+  if (step === 5) {
+    return 'TUTORIAL | Kamera: <b>connect cam_0</b> -> <b>inject loop</b> -> <b>disconnect</b>';
+  }
+
+  if (step === 6) {
+    return 'TUTORIAL | Guard: <b>connect guard_0</b> -> <b>set friendly</b> / <b>override</b> / <b>disable</b>';
+  }
+
+  if (step === 7) {
+    return 'TUTORIAL | Technician: <b>connect tech_0</b> -> <b>set friendly</b> / <b>override</b> / <b>disable</b>';
+  }
+
+  if (step === 8) {
+    return 'TUTORIAL | Side terminal map: <b>connect node_side_1</b> -> <b>download map</b>';
+  }
+
+  if (step === 9) {
+    return 'TUTORIAL | Side terminal loot: <b>download hack</b> lub <b>transfer credits</b>';
+  }
+
+  if (step === 10) {
+    return 'TUTORIAL | Main terminal: <b>connect node_main</b> -> <b>inject relay</b> / <b>deploy worm</b>';
+  }
+
+  if (step === 11) {
+    return 'TUTORIAL | Encyclopedia: <b>help guards</b> / <b>help technicians</b> / <b>help terminals</b> / <b>help mainterm</b>';
+  }
+
+  return 'TUTORIAL | Komplet. Wejdz w normalny run i uzywaj skrotow live terminala';
 }
 
 export function completeMainHack() {

@@ -273,6 +273,88 @@ export function generateMap(opts = {}) {
 	};
 }
 
+export function generateTutorialMap() {
+	const tiles = [];
+	for (let y = 0; y < MAP_H; y += 1) {
+		const row = [];
+		for (let x = 0; x < MAP_W; x += 1) {
+			row.push(TILE_TYPES.WALL);
+		}
+		tiles.push(row);
+	}
+
+	const rooms = [
+		{ x: 1, y: 1, w: 11, h: 9 },
+		{ x: 14, y: 1, w: 9, h: 8 },
+		{ x: 25, y: 1, w: 11, h: 9 },
+		{ x: 1, y: 14, w: 11, h: 10 },
+		{ x: 14, y: 12, w: 9, h: 12 },
+		{ x: 25, y: 14, w: 11, h: 10 },
+	];
+
+	for (const room of rooms) {
+		for (let y = room.y; y < room.y + room.h; y += 1) {
+			for (let x = room.x; x < room.x + room.w; x += 1) {
+				tiles[y][x] = TILE_TYPES.FLOOR;
+			}
+		}
+	}
+
+	for (let x = 6; x <= 30; x += 1) {
+		tiles[6][x] = TILE_TYPES.FLOOR;
+		tiles[18][x] = TILE_TYPES.FLOOR;
+	}
+
+	for (let y = 5; y <= 20; y += 1) {
+		tiles[y][18] = TILE_TYPES.FLOOR;
+	}
+
+	const entrance = { x: 4, y: 4 };
+	const mainTerminal = { x: 30, y: 4 };
+	const sideTerminals = [
+		{ id: 'node_side_1', x: 8, y: 16, desc: 'Terminal Treningowy A', hacked: false, used: false, options: [] },
+		{ id: 'node_side_2', x: 29, y: 18, desc: 'Terminal Treningowy B', hacked: false, used: false, options: [] },
+	];
+	const doors = [
+		{ id: 'door1', x: 18, y: 10, open: false },
+		{ id: 'door2', x: 24, y: 18, open: false },
+	];
+	const wallTerminals = [
+		{ id: 'panel_1', x: 17, y: 10, doorId: 'door1', desc: 'Panel drzwi A' },
+		{ id: 'panel_2', x: 24, y: 17, doorId: 'door2', desc: 'Panel drzwi B' },
+	];
+	const hideSpots = [{ x: 16, y: 18 }];
+
+	tiles[entrance.y][entrance.x] = TILE_TYPES.ENTRANCE;
+	tiles[mainTerminal.y][mainTerminal.x] = TILE_TYPES.MAIN_TERMINAL;
+	tiles[sideTerminals[0].y][sideTerminals[0].x] = TILE_TYPES.SIDE_TERMINAL;
+	tiles[sideTerminals[1].y][sideTerminals[1].x] = TILE_TYPES.SIDE_TERMINAL;
+	tiles[doors[0].y][doors[0].x] = TILE_TYPES.DOOR_CLOSED;
+	tiles[doors[1].y][doors[1].x] = TILE_TYPES.DOOR_CLOSED;
+	tiles[wallTerminals[0].y][wallTerminals[0].x] = TILE_TYPES.WALL_TERMINAL;
+	tiles[wallTerminals[1].y][wallTerminals[1].x] = TILE_TYPES.WALL_TERMINAL;
+	tiles[hideSpots[0].y][hideSpots[0].x] = TILE_TYPES.HIDE_SPOT;
+	tiles[4][33] = TILE_TYPES.STAIR_UP;
+	tiles[20][4] = TILE_TYPES.STAIR_DOWN;
+
+	return {
+		tiles,
+		rooms,
+		entrance,
+		mainTerminal,
+		sideTerminals,
+		doors,
+		wallTerminals,
+		hideSpots,
+		hasCodeTerminal: false,
+		stairsUp: { x: 33, y: 4, to: 0 },
+		stairsDown: { x: 4, y: 20, to: 0 },
+		floorIdx: 0,
+		floorCount: 1,
+		tutorial: true,
+	};
+}
+
 function placeDebugMainTerminal(tiles, spawn, entrance) {
 	const candidates = [
 		{ x: spawn.x + Math.max(2, spawn.w - 2), y: spawn.y + 2 },

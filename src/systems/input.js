@@ -1,6 +1,12 @@
 import { G } from '../core/state.js';
 import { TILE, TILE_TYPES } from '../core/constants.js';
 import { closeCtx, handleCanvasClick } from './hacking.js';
+import {
+  autocompleteTerminalInput,
+  closeTerminalOverlay,
+  isTerminalOverlayOpen,
+  toggleTerminalOverlay,
+} from './terminalRuntime.js';
 
 let bound = false;
 
@@ -12,6 +18,29 @@ export function bindInput() {
   bound = true;
 
   document.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      const inputFocused = event.target === G.dom.terminalInput;
+      event.preventDefault();
+
+      if (isTerminalOverlayOpen() && inputFocused) {
+        autocompleteTerminalInput();
+      } else {
+        toggleTerminalOverlay();
+      }
+      return;
+    }
+
+    if (event.key === 'Escape' && isTerminalOverlayOpen()) {
+      event.preventDefault();
+      closeTerminalOverlay();
+      closeCtx();
+      return;
+    }
+
     G.keys[event.key] = true;
 
     if (event.key === 'Escape') {

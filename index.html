@@ -636,6 +636,31 @@
                 <div class="instructions-line">Ruch lub odejscie przerywa postep.</div>
                 <div class="instructions-line">Po 100% uruchamia sie sekwencja Network Breach.</div>
               </div>
+
+              <div class="instructions-head">LIVE TERMINAL HELP</div>
+              <div class="instructions-card">
+                <div class="instructions-line">TAB otwiera realtime terminal overlay i blokuje ruch WASD.</div>
+                <div class="instructions-line">Na start wpisz: tutorial</div>
+                <div class="instructions-line">Drzwi: scan local -> connect panel_1 -> unlock -> disconnect</div>
+                <div class="instructions-line">Kamera: scan local -> connect cam_0 -> inject loop -> disconnect</div>
+                <div class="instructions-line">Dodatkowe tematy: help basics, help doors, help cameras, help stealth</div>
+              </div>
+
+              <div class="instructions-head">ENCYKLOPEDIA KOMEND LIVE TERMINALA</div>
+              <div class="instructions-card instructions-card-accent">
+                <div class="instructions-line"><b>BASIC FLOW:</b> scan local -> connect target -> command -> disconnect</div>
+                <div class="instructions-line"><b>DOORS/CAMERAS:</b> connect panel_1 -> unlock, connect cam_0 -> inject loop/disable</div>
+                <div class="instructions-line"><b>GUARDS/TECH:</b> connect guard_0/tech_0 -> set friendly / override / disable</div>
+                <div class="instructions-line"><b>SIDE TERMINALS:</b> connect node_side_# -> download map / download hack / transfer credits</div>
+                <div class="instructions-line"><b>MAIN TERMINAL:</b> connect node_main -> inject relay / deploy worm / reroute</div>
+                <div class="instructions-line"><b>TOPICS:</b> help guards, help technicians, help terminals, help mainterm</div>
+              </div>
+
+              <div class="instructions-card instructions-card-accent">
+                <div class="instructions-head">TUTORIAL MAP</div>
+                <div class="instructions-line">Uruchamia prostą mapę treningową ze wszystkimi najważniejszymi obiektami i komendami live terminala.</div>
+                <button class="tutorial-launch-btn" onclick="window.START_TUTORIAL()">START TUTORIAL MAP</button>
+              </div>
             </div>
 
             <div class="instructions-col">
@@ -805,6 +830,16 @@
   <div id="status-vignette" class="vignette ghost"></div>
   <div id="system-reset-warning"></div>
 
+  <div id="tutorial-panel" class="tutorial-panel">
+    <div class="tutorial-topline">
+      <span id="tutorial-step">STEP 1/12</span>
+      <span class="tutorial-live">INTERACTIVE TUTORIAL</span>
+    </div>
+    <div id="tutorial-title" class="tutorial-title">MOVE</div>
+    <div id="tutorial-body" class="tutorial-body">Poruszaj sie WASD do obiektu treningowego.</div>
+    <div id="tutorial-hint" class="tutorial-hint">Ruch nie pauzuje swiata. Obserwuj i reaguj.</div>
+  </div>
+
   <div id="qh-panel">
     <div class="qh-head">SZYBKIE HACKI</div>
     <div class="qh-sub">Wybierz akcje zanim czas minie</div>
@@ -844,6 +879,41 @@
         <div class="nb-loading-line">INITIALIZING...</div>
       </div>
       <div class="nb-loading-bar"><div id="nb-loading-bar-fill" class="nb-loading-bar-fill"></div></div>
+    </div>
+  </div>
+
+  <div id="rt-overlay" class="rt-overlay">
+    <div class="rt-panel">
+      <div class="rt-scanlines"></div>
+      <div class="rt-flicker"></div>
+      <div class="rt-head">
+        <span>REALTIME TERMINAL // LIVE UPLINK</span>
+        <span>ESC/TAB CLOSE</span>
+      </div>
+      <div class="rt-body">
+        <div class="rt-left">
+          <div id="rt-output" class="rt-output"></div>
+          <div class="rt-input-row">
+            <span class="rt-prompt">op@gp://</span>
+            <input id="rt-input" class="rt-input" type="text" autocomplete="off" spellcheck="false" placeholder="connect cam_01" />
+            <span class="rt-cursor"></span>
+          </div>
+          <div id="rt-suggestion" class="rt-suggestion"></div>
+        </div>
+        <div class="rt-right">
+          <div class="rt-stat">
+            <span>TRACE</span>
+            <span id="rt-trace-value">0%</span>
+          </div>
+          <div class="rt-trace-bar"><div id="rt-trace-fill" class="rt-trace-fill"></div></div>
+          <div class="rt-stat"><span>CONNECTED NODE</span><span id="rt-node">NONE</span></div>
+          <div class="rt-stat"><span>ACTIVE HACKS</span><span id="rt-hacks">NONE</span></div>
+          <div class="rt-stat"><span>RAM/CPU</span><span id="rt-ram-cpu">RAM 0% | CPU 0%</span></div>
+          <div class="rt-stat"><span>NETWORK</span><span id="rt-network">DORMANT</span></div>
+          <div class="rt-stat"><span>INTRUSION RISK</span><span id="rt-risk">0%</span></div>
+          <div class="rt-stat"><span>PENDING</span><span id="rt-pending">IDLE</span></div>
+        </div>
+      </div>
     </div>
   </div>
 

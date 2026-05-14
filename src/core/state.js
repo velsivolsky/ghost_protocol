@@ -1,3 +1,59 @@
+function createTerminalRuntimeState() {
+  return {
+    open: false,
+    inputBuffer: '',
+    suggestion: '',
+    history: [],
+    historyCursor: -1,
+    outputLines: [],
+    renderedOutputCount: 0,
+    renderedOutputRevision: 0,
+    outputRevision: 0,
+    tutorialShown: false,
+    scanHighlights: [],
+    connectedTargetId: null,
+    connectedTargetType: null,
+    connectedTargetLabel: 'NONE',
+    pendingCommand: null,
+    activeHacks: [],
+    commandCooldownMs: 0,
+    systemLogTickMs: 0,
+    networkStatus: 'DORMANT',
+    responseDelayMs: 0,
+    scrambleUntil: 0,
+    falseOutputUntil: 0,
+  };
+}
+
+function createTraceRuntimeState() {
+  return {
+    value: 0,
+    velocity: 0,
+    tier: 0,
+    risk: 0,
+    passivePerSec: 1.8,
+    decayPerSec: 3.1,
+    maskUntil: 0,
+    ghostUntil: 0,
+    lastSource: 'none',
+    lastSpike: 0,
+    lastEscalationAt: 0,
+  };
+}
+
+function createTutorialState() {
+  return {
+    active: false,
+    step: 0,
+    completed: false,
+    spawn: null,
+    lastCommandId: null,
+    lastCommandTopic: null,
+    lastCommandArgs: [],
+    lastStepAt: 0,
+  };
+}
+
 export const G = {
   canvas: null,
   ctx: null,
@@ -22,6 +78,9 @@ export const G = {
   hackProgress: 0,
   hackSpeedBonus: 0,
   missionPhase: 0,
+  terminalRuntime: createTerminalRuntimeState(),
+  traceRuntime: createTraceRuntimeState(),
+  tutorial: createTutorialState(),
   floor: 1,
   floorCount: 1,
   cleared: false,
@@ -160,6 +219,9 @@ export function initWaveState({ wave, credits, map, devices }) {
     hackProgress: 0,
     hackSpeedBonus: 0,
     missionPhase: 0,
+    terminalRuntime: createTerminalRuntimeState(),
+    traceRuntime: createTraceRuntimeState(),
+    tutorial: createTutorialState(),
     floor: 1,
     floorCount: map.floorCount || 1,
     cleared: false,
@@ -224,6 +286,9 @@ export function initFloorState({ map, devices }) {
     hackingMain: false,
     hackProgress: 0,
     missionPhase: 0,
+    terminalRuntime: createTerminalRuntimeState(),
+    traceRuntime: createTraceRuntimeState(),
+    tutorial: createTutorialState(),
     paused: false,
     breachActive: false,
     breachFailed: false,

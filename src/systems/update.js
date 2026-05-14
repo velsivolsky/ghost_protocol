@@ -19,6 +19,9 @@ import { closeCtx } from './hacking.js';
 import { getTimeScale, startQuickHackWindow, tickQuickHackWindow } from './quickhacks.js';
 import { launchNetworkBreach } from './networkBreach.js';
 import { resolveRunFailure } from './recruitment.js';
+import { tickTraceSystem } from './traceSystem.js';
+import { isTerminalOverlayOpen, tickTerminalRuntime } from './terminalRuntime.js';
+import { tickTutorial, updateTutorialPanel } from './tutorial.js';
 
 const STAIR_TRANSITION_COOLDOWN_MS = 900;
 
@@ -122,6 +125,7 @@ export function update(dt) {
 	G.desaturation += (targetDesaturation - G.desaturation) * 0.1;
 
 	const moved = updatePlayerMovement(simDt);
+	tickTutorial(moved);
 	updateVisibility();
 
 	if (checkStairTransition()) {
@@ -186,6 +190,8 @@ export function update(dt) {
 	}
 
 	checkDeadGuardDiscovery();
+	tickTerminalRuntime(dt);
+	tickTraceSystem(dt);
 
 	if (G.alert > 0 && G.tick % 90 === 0) {
 		G.alert = Math.max(0, G.alert - 0.4);
@@ -193,6 +199,7 @@ export function update(dt) {
 
 	refreshHUD();
 	rebuildList();
+	updateTutorialPanel();
 }
 
 function checkDeadGuardDiscovery() {
@@ -268,6 +275,10 @@ function canCameraSeeBody(camera, body) {
 }
 
 function updatePlayerMovement(dt) {
+	if (isTerminalOverlayOpen()) {
+		return false;
+	}
+
 	let dx = 0;
 	let dy = 0;
 
