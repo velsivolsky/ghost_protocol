@@ -27,6 +27,7 @@ import {
   getActiveRunOffers,
   getContacts,
   getCrew,
+  getCurrentRunOffer,
   getSelectedCrewMember,
   markRunStarted,
   setCurrentRunOffer,
@@ -34,6 +35,7 @@ import {
 } from '../systems/recruitment.js';
 import { loadDataFragments, isProbabilityUnlocked, unlockProbability, saveDataFragments, ensureDataFragmentState, isDecryptorUnlocked, unlockDecryptor } from '../systems/dataFragments.js';
 import { renderDataBoard } from '../systems/ui.js';
+import { focusMenuTerminalInput, initMenuTerminal, syncMenuTerminalStatus } from '../systems/menuTerminal.js';
 
 let started = false;
 let pendingStart = { wave: 1, credits: 0 };
@@ -557,27 +559,31 @@ function buildOperatorPortrait(member) {
 }
 
 function switchStartMenuTab(tab) {
-  const valid = ['plan', 'recruit', 'market', 'instructions', 'databoard'];
+  const valid = ['plan', 'recruit', 'market', 'terminal', 'instructions', 'databoard'];
   const normalized = valid.includes(tab) ? tab : 'plan';
   const tabPlan = document.getElementById('menu-tab-plan');
   const tabRecruit = document.getElementById('menu-tab-recruit');
   const tabMarket = document.getElementById('menu-tab-market');
+  const tabTerminal = document.getElementById('menu-tab-terminal');
   const tabInstructions = document.getElementById('menu-tab-instructions');
   const tabDataboard = document.getElementById('menu-tab-databoard');
   const panelPlan = document.getElementById('menu-panel-plan');
   const panelRecruit = document.getElementById('menu-panel-recruit');
   const panelMarket = document.getElementById('menu-panel-market');
+  const panelTerminal = document.getElementById('menu-panel-terminal');
   const panelInstructions = document.getElementById('menu-panel-instructions');
   const panelDataboard = document.getElementById('menu-panel-databoard');
 
   if (tabPlan) tabPlan.classList.toggle('active', normalized === 'plan');
   if (tabRecruit) tabRecruit.classList.toggle('active', normalized === 'recruit');
   if (tabMarket) tabMarket.classList.toggle('active', normalized === 'market');
+  if (tabTerminal) tabTerminal.classList.toggle('active', normalized === 'terminal');
   if (tabInstructions) tabInstructions.classList.toggle('active', normalized === 'instructions');
   if (tabDataboard) tabDataboard.classList.toggle('active', normalized === 'databoard');
   if (panelPlan) panelPlan.classList.toggle('show', normalized === 'plan');
   if (panelRecruit) panelRecruit.classList.toggle('show', normalized === 'recruit');
   if (panelMarket) panelMarket.classList.toggle('show', normalized === 'market');
+  if (panelTerminal) panelTerminal.classList.toggle('show', normalized === 'terminal');
   if (panelInstructions) panelInstructions.classList.toggle('show', normalized === 'instructions');
   if (panelDataboard) panelDataboard.classList.toggle('show', normalized === 'databoard');
 
@@ -587,6 +593,12 @@ function switchStartMenuTab(tab) {
   }
   if (normalized === 'databoard') {
     setTimeout(renderDataBoard, 0);
+  }
+  if (normalized === 'terminal') {
+    setTimeout(() => {
+      syncMenuTerminalStatus();
+      focusMenuTerminalInput();
+    }, 0);
   }
 }
 
@@ -612,6 +624,7 @@ function showMainMenu(fromRun = false) {
   }
 
   renderStartMenu();
+  syncMenuTerminalStatus();
   setTimeout(renderPlanMapAndList, 0);
 }
 
@@ -662,16 +675,17 @@ function startTerminalStream() {
 function startSelectedRun(runId) {
   const selectedRun = setCurrentRunOffer(runId);
   if (!selectedRun.success) {
-    return;
+    return { success: false, message: selectedRun.message || 'Nie mozna wybrac runu.' };
   }
 
   const selectedCrew = getSelectedCrewMember();
   if (!selectedCrew) {
-    return;
+    return { success: false, message: 'Brak wybranego operatora.' };
   }
 
   hideMainMenu();
   startRun(pendingStart.wave, pendingStart.credits);
+  return { success: true, message: `Uruchamianie ${runId}...` };
 }
 
 function startSelectedRunFromMap(runId) {
@@ -697,6 +711,24 @@ export function boot() {
     bindInput();
     startLoop();
   }
+
+  initMenuTerminal({
+    onStateMutated: () => {
+      renderStartMenu();
+      if (planSelectedRunId) {
+        renderPlanRunDetail(planSelectedRunId);
+      }
+      setTimeout(renderPlanMapAndList, 0);
+      syncMenuTerminalStatus();
+    },
+    onRequestRunStart: () => {
+      const run = getCurrentRunOffer();
+      if (!run) {
+        return { success: false, message: 'Brak wybranego runu.' };
+      }
+      return startSelectedRun(run.id);
+    },
+  });
 
   window.RESTART = () => openMainMenuForRunSelection(1, 0);
   window.NEXT = () => openMainMenuForRunSelection(G.wave + 1, G.P.cr);

@@ -3896,6 +3896,92 @@ body {
   height: 100%;
 }
 
+#menu-panel-terminal {
+	padding: 0;
+}
+
+.menu-terminal-shell {
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	border: 1px solid rgba(0, 255, 159, 0.3);
+	border-radius: 10px;
+	background: linear-gradient(180deg, rgba(8, 16, 27, 0.98), rgba(4, 10, 18, 0.98));
+	box-shadow: inset 0 0 20px rgba(0, 255, 159, 0.06);
+}
+
+.menu-terminal-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 14px;
+	border-bottom: 1px solid rgba(0, 255, 159, 0.2);
+	color: #7ac8ff;
+	font-size: 10px;
+	letter-spacing: 1.6px;
+	text-transform: uppercase;
+}
+
+.menu-terminal-status {
+	color: #00ff9f;
+}
+
+.menu-terminal-output {
+	flex: 1;
+	overflow: auto;
+	padding: 14px;
+	font-size: 11px;
+	line-height: 1.55;
+	color: #bce6ff;
+	background:
+		linear-gradient(transparent 95%, rgba(0, 255, 159, 0.03) 100%),
+		repeating-linear-gradient(to bottom, transparent 0px, transparent 2px, rgba(122, 200, 255, 0.03) 3px, transparent 4px);
+}
+
+.menu-terminal-line {
+	margin-bottom: 6px;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.menu-terminal-line.system { color: #39ff14; }
+.menu-terminal-line.info { color: #9cdcff; }
+.menu-terminal-line.ok { color: #00ff9f; }
+.menu-terminal-line.warn { color: #ffd269; }
+.menu-terminal-line.err { color: #ff6a87; }
+.menu-terminal-line.dim { color: rgba(156, 220, 255, 0.64); }
+.menu-terminal-line.input { color: #d7f8ff; }
+
+.menu-terminal-input-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	border-top: 1px solid rgba(0, 255, 159, 0.2);
+	padding: 10px 14px;
+	background: rgba(6, 14, 24, 0.92);
+}
+
+.menu-terminal-prompt {
+	color: #39ff14;
+	font-size: 11px;
+	letter-spacing: 1px;
+}
+
+.menu-terminal-input {
+	flex: 1;
+	background: transparent;
+	border: none;
+	outline: none;
+	color: #bce6ff;
+	font-family: inherit;
+	font-size: 11px;
+}
+
+.menu-terminal-input::placeholder {
+	color: rgba(122, 200, 255, 0.38);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    PARANOIA SYSTEM — Board tier effects
    ═══════════════════════════════════════════════════════════════════════════ */

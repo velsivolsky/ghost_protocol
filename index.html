@@ -559,6 +559,7 @@
           <button id="menu-tab-plan" class="menu-tab active" onclick="SWITCH_START_MENU_TAB('plan')">PLANUJ RUN</button>
           <button id="menu-tab-recruit" class="menu-tab" onclick="SWITCH_START_MENU_TAB('recruit')">REKRUTACJA</button>
           <button id="menu-tab-market" class="menu-tab" onclick="SWITCH_START_MENU_TAB('market')">MARKETPLACE</button>
+          <button id="menu-tab-terminal" class="menu-tab" onclick="SWITCH_START_MENU_TAB('terminal')">TERMINAL</button>
           <button id="menu-tab-databoard" class="menu-tab menu-tab-df" onclick="SWITCH_START_MENU_TAB('databoard')">DATA BOARD</button>
           <button id="menu-tab-instructions" class="menu-tab" onclick="SWITCH_START_MENU_TAB('instructions')">INSTRUKCJE</button>
         </div>
@@ -596,6 +597,26 @@
         </div>
         <div id="menu-panel-market" class="menu-panel">
           <div id="menu-hack-market" class="menu-hack-market"></div>
+        </div>
+        <div id="menu-panel-terminal" class="menu-panel">
+          <div class="menu-terminal-shell">
+            <div class="menu-terminal-header">
+              <span>TACTICAL TERMINAL // V1</span>
+              <span id="menu-terminal-status" class="menu-terminal-status">WAVE 1 // WALLET ¥0</span>
+            </div>
+            <div id="menu-terminal-output" class="menu-terminal-output" aria-live="polite"></div>
+            <div class="menu-terminal-input-row">
+              <span class="menu-terminal-prompt">root@gp://</span>
+              <input
+                id="menu-terminal-input"
+                class="menu-terminal-input"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="type 'help'"
+              />
+            </div>
+          </div>
         </div>
         <div id="menu-panel-instructions" class="menu-panel">
           <div class="instructions-layout">
@@ -908,11 +929,11 @@
       };
 
       const FILES = {
-        '/mnt/node/memo.txt': 'jesli to czytasz, wezlem nadal da sie oddychac.\n\nzacznij od podstaw i sprawdz co system potrafi.\nuzyj: help\n\nczytaj odzyskane pliki uwaznie. powtorzenia nie sa przypadkowe.\nsektor 23 to nie miejsce, tylko blizna po incydencie.\nschema v11 jest stara, ale blokada nadal jej slucha.\n\nkazdy blad komendy to tez wskazowka.\n\n- k',
-        '/users/ghost/memo.txt': 'jesli ten node jeszcze kiedykolwiek wstanie,\nnie ufaj lustrom w /sys.\n\nghost nadal ma prawa do shella.\nprotokol zmieniono po incydencie sektor 23.\n\njesli slyszysz szum w /cache, odetnij linie.\n\n- k',
-        '/users/ghost/auth.log': '[AUTH_001] 2089-03-01 12:15:33 | ghost   | LOGOWANIE    | SUKCES\n[AUTH_002] 2089-03-05 08:22:11 | ghost   | ODPYTANIE_SEKTORA | CZESCIOWE | sektor:23\n[AUTH_003] 2089-03-12 14:30:22 | ghost   | EDYCJA_KONFIGU | SUKCES | schema:v11\n[AUTH_004] 2089-03-15 04:23:12 | system  | BLOKADA      | AKTYWNA | incydent:sektor_23\n[AUTH_005] 2089-03-15 04:23:16 | unknown | LOGOWANIE    | ODRZUT  | slad:wypalony\n[AUTH_006] 2089-03-15 04:23:20 | unknown | LOGOWANIE    | ODRZUT  | zrodlo:brak',
+        '/mnt/node/memo.txt': 'jesli to czytasz, wezlem nadal jest aktywny.\n\nzacznij od podstaw i sprawdz co system potrafi.\nuzyj: help\n\nczytaj odzyskane pliki uwaznie. powtorzenia nie sa przypadkowe.\nsektor 23 to nie miejsce, tylko blizna po incydencie.\nschema v11 jest stara, ale blokada nadal jej slucha.\n\nkazdy blad komendy to tez wskazowka.\n\n- k',
+        '/users/ghost/memo.txt': 'jesli ten node jeszcze kiedykolwiek wstanie,\nnie ufaj mirrorom w /sys.\n\nghost nadal ma prawa do shella.\nprotokol zmieniono po incydencie - sektor 23.\n\njesli slyszysz szum w /cache, odetnij linie.\n\n- k',
+        '/users/ghost/auth.log': '[AUTH_001] 2089-03-01 12:15:33 | ghost   | LOGOWANIE    | SUKCES\n[AUTH_002] 2089-03-05 08:22:11 | ghost   | ODPYTANIE_SEKTORA | CZESCIOWE | sektor:23\n[AUTH_003] 2089-03-12 14:30:22 | ghost   | EDYCJA_KONFIGU | SUKCES | schema:v11\n[AUTH_004] 2089-03-15 04:23:12 | system  | BLOKADA      | AKTYWNA | incydent:sektor_23\n[AUTH_005] 2089-03-15 04:23:16 | unknown | LOGOWANIE    | ODMOWA  | slad:wypalony\n[AUTH_006] 2089-03-15 04:23:20 | unknown | LOGOWANIE    | ODMOWA  | zrodlo:brak',
         '/users/ghost/sectors.map': 'STATUS SEKTOROW\n\n23 :: ZABLOKOWANY [czarna kwarantanna]\n11 :: PRZEKIEROWANO SCHEME LEGACY\nNET :: ZDEGRADOWANY [przebicie echa]\nCACHE :: NIESTABILNY [slady szczatkowe]\nARCHIVE :: CZESCIOWY [brak zapieczetowanych blokow]',
-        '/users/ghost/protocol.txt': 'protokol zmieniono po incydencie sektor 23.\nlegacy schema v11 nadal aktywna.\n\nnie uzywaj ponownie starej frazy dostepu.',
+        '/users/ghost/protocol.txt': 'protokol zmieniono po incydencie - sektor 23.\nlegacy schema v11 nadal aktywna.\n\nnie uzywaj ponownie starej frazy dostepu.',
         '/users/ghost/session.log': 'SLAD SESJI\n\noperator: ghost\nschema autoryzacji: legacy_v11\nsektor protokolu: 23\nflaga odzyskiwania: wlaczona\nproces cienia: nierozwiazany\nostatni heartbeat: 2089-03-15 04:23:11'
       };
 
@@ -1005,8 +1026,8 @@
           statusLabel: 'TRYB ODZYSKIWANIA',
           loginPrompt: 'HASLO:',
           accessGranted: 'DOSTEP PRZYZNANY',
-          decrypting: 'Odszyfrowywanie profilu operatora... [wykryto szczatkowy odcisk ghost]',
-          restoring: 'Przywracanie zaszyfrowanej sesji... [zimny montaz archiwum]',
+          decrypting: 'Odszyfrowywanie profilu operatora... [wykryto szczatkowy fingerprint ghost]',
+          restoring: 'Przywracanie zaszyfrowanej sesji... [montaz archiwum]',
           synchronizing: 'Synchronizacja stanu wezla... [watchdog wyciszony]',
           langUsage: 'lang: uzyj pl albo en',
           showUsage: 'show: uzyj login albo password',
@@ -1017,7 +1038,7 @@
           invalidLogin: 'Uzyj: login ghost (wymagany identyfikator operatora)',
           notFound: 'nie znaleziono komendy',
           whoamiAnon: 'operator',
-          logoutDone: 'Sesja zakonczona. Odcisk ghost usuniety. Intro recovery wroci przy kolejnym uruchomieniu.',
+          logoutDone: 'Sesja zakonczona. Fingerprint ghost usuniety. Intro recovery wroci przy kolejnym uruchomieniu.',
           needArg: 'brak argumentu',
           noSuchFile: 'Nie ma takiego pliku lub katalogu',
           notDir: 'To nie jest katalog',
