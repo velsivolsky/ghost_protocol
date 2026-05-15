@@ -136,9 +136,14 @@ export function showCtx(screenX, screenY, target, targetType) {
     return;
   } else if (targetType === 'mainterm') {
     const distance = dst(target, G.P);
+    const access = G.mainTerminalAuth || { requiredShards: 0, recoveredByNode: {}, unlocked: true };
+    const recoveredCount = Object.keys(access.recoveredByNode || {}).length;
 
     if (G.mainHacked) {
       addCtxBtn('✓ Zhakowany — wróć do wejścia', false);
+    } else if (!access.unlocked) {
+      addCtxBtn(`✗ MAIN LOCKED [${recoveredCount}/${access.requiredShards} SHARD]`, false);
+      addCtxBtn('↳ side terminal: breach firewall -> dump creds', false);
     } else if (distance > MAIN_HACK_DISTANCE) {
       addCtxBtn('⊛ Zbliż się do terminala', false);
     } else if (G.hackingMain) {
@@ -192,6 +197,10 @@ export function handleCanvasClick(event) {
   const playerOnStairs = playerTile === TILE_TYPES.STAIR_UP || playerTile === TILE_TYPES.STAIR_DOWN;
 
   if (playerOnStairs) {
+    if (!G.elevatorUnlocked) {
+      log('Winda zablokowana. Odblokuj: connect node_main -> unlock elevator', 'w');
+      return;
+    }
     G.stairTransitionRequested = true;
     return;
   }

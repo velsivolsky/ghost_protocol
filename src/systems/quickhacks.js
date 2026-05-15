@@ -2,8 +2,9 @@ import { G, byType } from '../core/state.js';
 import { TILE_TYPES } from '../core/constants.js';
 import { clamp } from '../utils/math.js';
 import { log, floatMsg, rebuildList } from './ui.js';
+import { addTerminalHeat, openDetectionTerminal, closeDetectionTerminal } from './terminalRuntime.js';
 
-const QUICK_HACK_WINDOW_MS = 5000;
+const QUICK_HACK_WINDOW_MS = 6000;
 const QUICK_HACK_TIME_SCALE = 0.35;
 
 const QUICK_HACKS = {
@@ -161,34 +162,33 @@ export function startQuickHackWindow(guardId) {
 		targetGuardId: guardId,
 		timerMs: QUICK_HACK_WINDOW_MS,
 		durationMs: QUICK_HACK_WINDOW_MS,
-		freezeGame: true,
+		freezeGame: false,
 	};
 
-	G.paused = true;
-
-	log('Szybkie hacki online - wybierz akcje!', 'w');
-	renderQuickHackChoices();
-	renderQuickHackTimer();
-	showQuickHackUI();
+	openDetectionTerminal(guardId);
 }
 
 export function tickQuickHackWindow(dt) {
 	if (!G.quickHackWindow?.active) {
-		hideQuickHackUI();
 		return;
 	}
 
 	G.quickHackWindow.timerMs = Math.max(0, G.quickHackWindow.timerMs - dt);
 
-	if (G.quickHackWindow.timerMs <= 0) {
-		G.quickHackWindow.active = false;
-		G.paused = false;
-		log('Okno szybkich hackow zamkniete', 'w');
-		hideQuickHackUI();
-		return;
+	// Aktualizuj pasek detekcji w terminalu
+	if (G.dom.detectTimerFill) {
+		const ratio = G.quickHackWindow.durationMs > 0
+			? G.quickHackWindow.timerMs / G.quickHackWindow.durationMs
+			: 0;
+		G.dom.detectTimerFill.style.width = `${Math.max(0, ratio) * 100}%`;
 	}
 
-	renderQuickHackTimer();
+	if (G.quickHackWindow.timerMs <= 0) {
+		G.quickHackWindow.active = false;
+		closeDetectionTerminal();
+		log('Okno awaryjne wygaslo', 'w');
+		return;
+	}
 }
 
 export function getTimeScale() {
@@ -205,7 +205,7 @@ export function resetQuickHackState() {
 	}
 
 	G.paused = false;
-
+	closeDetectionTerminal();
 	hideQuickHackUI();
 }
 
@@ -239,6 +239,7 @@ export function useQuickHack(id) {
 
 	G.P.bw -= def.bw;
 	G.quickHacks[id] -= 1;
+	addTerminalHeat(getQuickHackHeatCost(id), `quickhack:${id}`);
 
 	if (id === 'optics') {
 		target.opticsOfflineT = 10000;
@@ -304,6 +305,28 @@ export function useQuickHack(id) {
 	hideQuickHackUI();
 	rebuildList();
 	return true;
+}
+
+function getQuickHackHeatCost(id) {
+	if (id === 'ddos') {
+		return 24;
+	}
+	if (id === 'neural') {
+		return 20;
+	}
+	if (id === 'lagspike') {
+		return 16;
+	}
+	if (id === 'mirrorloop') {
+		return 12;
+	}
+	if (id === 'ghostmesh' || id === 'silencer') {
+		return 8;
+	}
+	if (id === 'optics' || id === 'motorics') {
+		return 10;
+	}
+	return 10;
 }
 
 function triggerNeuralOverload(target) {

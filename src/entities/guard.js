@@ -64,6 +64,9 @@ export function createGuard(index, room, wave) {
     opticsOfflineT: 0,
     motoricsResetT: 0,
     bodyReported: false,
+    investigateX: null,
+    investigateY: null,
+    investigateUntil: 0,
   };
 }
 
@@ -92,7 +95,7 @@ export function tickGuard(guard, dt) {
   while (diff < -Math.PI) diff += Math.PI * 2;
 
   const seesPlayer =
-    distance < 5 &&
+    distance < 7 &&
     Math.abs(diff) < 0.8 &&
     guard.opticsOfflineT <= 0 &&
     !guard.hacked &&
@@ -111,6 +114,7 @@ export function tickGuard(guard, dt) {
 
   if (seesPlayer) {
     guard.lastSeen = { x: player.x, y: player.y };
+    guard.investigateUntil = 0;
 
     if (guard.state === 'idle') {
       guard.state = 'suspicious';
@@ -121,7 +125,7 @@ export function tickGuard(guard, dt) {
     guard.detect = (guard.detect || 0) + dt * 0.001;
     G.alert = clamp(G.alert + dt * 0.015);
 
-    if (guard.detect > 1.4 && distance < 3.2) {
+    if (guard.detect > 1.4 && distance < 5) {
       guard.state = 'chase';
       guard.searchTimer = 0;
       log('Strażnik namierza cel!', 'w');
@@ -155,11 +159,24 @@ export function tickGuard(guard, dt) {
 
   const playerMaxStep = (PLAYER_SPEED * dt) / 1000;
   const speedMultiplier = guard.motoricsResetT > 0 ? 0.25 : 1;
-  const patrolSpeed = playerMaxStep * 0.45 * speedMultiplier;
+  const patrolSpeed = playerMaxStep * 0.28 * speedMultiplier;
   const searchSpeed = playerMaxStep * 0.7 * speedMultiplier;
   const chaseSpeed = playerMaxStep * speedMultiplier;
 
   if (guard.state === 'search' && guard.lastSeen) {
+    const now = performance.now();
+    if (
+      guard.investigateUntil > now &&
+      Number.isFinite(guard.investigateX) &&
+      Number.isFinite(guard.investigateY)
+    ) {
+      const arrivedInvestigate = moveWithPath(guard, guard.investigateX, guard.investigateY, searchSpeed);
+      if (arrivedInvestigate) {
+        guard.searchTimer = (guard.searchTimer || 0) + dt;
+      }
+      return;
+    }
+
     const arrived = moveWithPath(guard, guard.lastSeen.x, guard.lastSeen.y, searchSpeed);
 
     if (arrived) {

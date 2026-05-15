@@ -57,6 +57,7 @@ export function generateMultiFloorMap(floorCount = 3) {
 			}
 		}
 	}
+	assignRunAccessPlan(floors);
 	return floors;
 }
 
@@ -76,14 +77,21 @@ export function generateMap(opts = {}) {
 	}
 
 	const rooms = [{ x: 1, y: 1, w: 7, h: 6 }];
+	const baseRoomTarget = 13 + Math.min(4, opts.floorIdx || 0);
+	const targetRooms = Math.min(18, baseRoomTarget + ((Math.random() * 3) | 0));
 
-	for (let attempt = 0; attempt < 80 && rooms.length < 12; attempt += 1) {
+	for (let attempt = 0; attempt < 120 && rooms.length < targetRooms; attempt += 1) {
+		const profile = pickRoomProfile();
 		const room = {
-			x: 1 + ((Math.random() * (MAP_W - 6 - 2)) | 0),
-			y: 1 + ((Math.random() * (MAP_H - 5 - 2)) | 0),
-			w: 4 + ((Math.random() * 5) | 0),
-			h: 3 + ((Math.random() * 4) | 0),
+			x: 1 + ((Math.random() * Math.max(1, MAP_W - profile.w - 2)) | 0),
+			y: 1 + ((Math.random() * Math.max(1, MAP_H - profile.h - 2)) | 0),
+			w: profile.w,
+			h: profile.h,
 		};
+
+		if (!canPlaceRoom(room, rooms)) {
+			continue;
+		}
 
 		rooms.push(room);
 	}
@@ -110,11 +118,17 @@ export function generateMap(opts = {}) {
 
 		while (cursorX !== endX) {
 			tiles[cursorY][cursorX] = TILE_TYPES.FLOOR;
+			if (Math.random() < 0.32 && tiles[cursorY + 1]?.[cursorX] === TILE_TYPES.WALL) {
+				tiles[cursorY + 1][cursorX] = TILE_TYPES.FLOOR;
+			}
 			cursorX += cursorX < endX ? 1 : -1;
 		}
 
 		while (cursorY !== endY) {
 			tiles[cursorY][cursorX] = TILE_TYPES.FLOOR;
+			if (Math.random() < 0.32 && tiles[cursorY]?.[cursorX + 1] === TILE_TYPES.WALL) {
+				tiles[cursorY][cursorX + 1] = TILE_TYPES.FLOOR;
+			}
 			cursorY += cursorY < endY ? 1 : -1;
 		}
 	}
@@ -139,6 +153,8 @@ export function generateMap(opts = {}) {
 				y: lastRoom.y + ((lastRoom.h / 2) | 0),
 			};
 	}
+	mainTerminal.id = mainTerminal.id || 'node_main';
+	mainTerminal.networkName = mainTerminal.networkName || makeNetworkName('MAIN', opts.floorIdx || 0, 0);
 
 	addPillarsInLargeRooms(tiles, rooms, [entrance, mainTerminal]);
 	addCorporatePartitions(tiles, rooms, [entrance, mainTerminal]);
@@ -158,12 +174,18 @@ export function generateMap(opts = {}) {
 		if (tiles[y][x] === TILE_TYPES.FLOOR) {
 			tiles[y][x] = TILE_TYPES.SIDE_TERMINAL;
 			sideTerminals.push({
-				id: `sterm${index}`,
+				id: `node_side_${index + 1}`,
+				networkName: makeNetworkName('SIDE', opts.floorIdx || 0, index + 1),
 				x,
 				y,
 				desc: `Terminal S-${index + 1}`,
 				hacked: false,
 				used: false,
+				firewallBreached: false,
+				requiresFirewall: false,
+				authShard: null,
+				authShardIndex: null,
+				authShardExtracted: false,
 				options: [],
 			});
 		}
@@ -207,7 +229,7 @@ export function generateMap(opts = {}) {
 
 	for (let index = 0; index < doorCount; index += 1) {
 		const candidate = shuffledDoors[index];
-		const doorId = `door${index}`;
+		const doorId = `door_${index + 1}`;
 
 		tiles[candidate.y][candidate.x] = TILE_TYPES.DOOR_CLOSED;
 		doors.push({ id: doorId, x: candidate.x, y: candidate.y, open: false });
@@ -229,7 +251,8 @@ export function generateMap(opts = {}) {
 
 			tiles[py][px] = TILE_TYPES.WALL_TERMINAL;
 			wallTerminals.push({
-				id: `wterm${index}`,
+				id: `panel_${index + 1}`,
+				networkName: makeNetworkName('PANEL', opts.floorIdx || 0, index + 1),
 				x: px,
 				y: py,
 				doorId,
@@ -256,6 +279,9 @@ export function generateMap(opts = {}) {
 		hideSpots.push({ x: hx, y: hy });
 	}
 
+	const distractionNodes = addDistractionNodes(tiles, rooms, [entrance, mainTerminal, ...sideTerminals], opts.floorIdx || 0);
+	ensureCriticalPaths(tiles, entrance, mainTerminal, sideTerminals, distractionNodes);
+
 	return {
 		tiles,
 		rooms,
@@ -265,6 +291,7 @@ export function generateMap(opts = {}) {
 		doors,
 		wallTerminals,
 		hideSpots,
+		distractionNodes,
 		hasCodeTerminal: opts.codeTerminal || false,
 		stairsUp: null,
 		stairsDown: null,
@@ -309,21 +336,140 @@ export function generateTutorialMap() {
 		tiles[y][18] = TILE_TYPES.FLOOR;
 	}
 
+	const tutorialPillars = [
+		{ x: 6, y: 7 },
+		{ x: 9, y: 7 },
+		{ x: 27, y: 7 },
+		{ x: 30, y: 7 },
+		{ x: 6, y: 19 },
+		{ x: 9, y: 19 },
+		{ x: 27, y: 19 },
+		{ x: 30, y: 19 },
+		{ x: 16, y: 16 },
+		{ x: 20, y: 16 },
+	];
+
+	for (const pillar of tutorialPillars) {
+		if (tiles[pillar.y]?.[pillar.x] === TILE_TYPES.FLOOR) {
+			tiles[pillar.y][pillar.x] = TILE_TYPES.WALL;
+		}
+	}
+
+	for (let x = 3; x <= 10; x += 1) {
+		if (x === 6 || x === 9) {
+			continue;
+		}
+		if (tiles[8]?.[x] === TILE_TYPES.FLOOR) {
+			tiles[8][x] = TILE_TYPES.WALL;
+		}
+	}
+
+	for (let y = 15; y <= 22; y += 1) {
+		if (y === 18 || y === 20) {
+			continue;
+		}
+		if (tiles[y]?.[7] === TILE_TYPES.FLOOR) {
+			tiles[y][7] = TILE_TYPES.WALL;
+		}
+	}
+
 	const entrance = { x: 4, y: 4 };
 	const mainTerminal = { x: 30, y: 4 };
 	const sideTerminals = [
-		{ id: 'node_side_1', x: 8, y: 16, desc: 'Terminal Treningowy A', hacked: false, used: false, options: [] },
-		{ id: 'node_side_2', x: 29, y: 18, desc: 'Terminal Treningowy B', hacked: false, used: false, options: [] },
+		{
+			id: 'node_side_1',
+			networkName: makeNetworkName('SIDE', 0, 1),
+			x: 8,
+			y: 16,
+			desc: 'Terminal Treningowy A',
+			hacked: false,
+			used: false,
+			firewallBreached: false,
+			requiresFirewall: false,
+			authShard: null,
+			authShardIndex: null,
+			authShardExtracted: false,
+			options: [],
+		},
+		{
+			id: 'node_side_2',
+			networkName: makeNetworkName('SIDE', 0, 2),
+			x: 29,
+			y: 18,
+			desc: 'Terminal Treningowy B',
+			hacked: false,
+			used: false,
+			firewallBreached: false,
+			requiresFirewall: false,
+			authShard: null,
+			authShardIndex: null,
+			authShardExtracted: false,
+			options: [],
+		},
 	];
 	const doors = [
-		{ id: 'door1', x: 18, y: 10, open: false },
-		{ id: 'door2', x: 24, y: 18, open: false },
+		{ id: 'door_1', x: 18, y: 10, open: false },
+		{ id: 'door_2', x: 24, y: 18, open: false },
 	];
 	const wallTerminals = [
-		{ id: 'panel_1', x: 17, y: 10, doorId: 'door1', desc: 'Panel drzwi A' },
-		{ id: 'panel_2', x: 24, y: 17, doorId: 'door2', desc: 'Panel drzwi B' },
+		{ id: 'panel_1', networkName: makeNetworkName('PANEL', 0, 1), x: 17, y: 10, doorId: 'door_1', desc: 'Panel drzwi A' },
+		{ id: 'panel_2', networkName: makeNetworkName('PANEL', 0, 2), x: 24, y: 17, doorId: 'door_2', desc: 'Panel drzwi B' },
 	];
+		mainTerminal.id = 'node_main';
+		mainTerminal.networkName = makeNetworkName('MAIN', 0, 0);
 	const hideSpots = [{ x: 16, y: 18 }];
+	const distractionNodes = [
+		{
+			id: 'vent_1',
+			networkName: makeNetworkName('VENT', 0, 1),
+			x: 21,
+			y: 16,
+			desc: 'Węzeł wentylacji',
+			type: 'vent',
+			cooldownMs: 6500,
+			durationMs: 6500,
+		},
+		{
+			id: 'lights_1',
+			networkName: makeNetworkName('LIGHTS', 0, 1),
+			x: 9,
+			y: 6,
+			desc: 'Sterownik oświetlenia',
+			type: 'lights',
+			cooldownMs: 6800,
+			durationMs: 6200,
+		},
+		{
+			id: 'junction_1',
+			networkName: makeNetworkName('JUNCTION', 0, 1),
+			x: 27,
+			y: 6,
+			desc: 'Panel energetyczny',
+			type: 'junction',
+			cooldownMs: 7000,
+			durationMs: 5500,
+		},
+		{
+			id: 'wallpanel_1',
+			networkName: makeNetworkName('WALLPANEL', 0, 1),
+			x: 16,
+			y: 10,
+			desc: 'Panel scienny',
+			type: 'wallpanel',
+			cooldownMs: 7200,
+			durationMs: 5500,
+		},
+		{
+			id: 'vent_2',
+			networkName: makeNetworkName('VENT', 0, 2),
+			x: 30,
+			y: 16,
+			desc: 'Węzeł wentylacji B',
+			type: 'vent',
+			cooldownMs: 7200,
+			durationMs: 7000,
+		},
+	];
 
 	tiles[entrance.y][entrance.x] = TILE_TYPES.ENTRANCE;
 	tiles[mainTerminal.y][mainTerminal.x] = TILE_TYPES.MAIN_TERMINAL;
@@ -333,6 +479,7 @@ export function generateTutorialMap() {
 	tiles[doors[1].y][doors[1].x] = TILE_TYPES.DOOR_CLOSED;
 	tiles[wallTerminals[0].y][wallTerminals[0].x] = TILE_TYPES.WALL_TERMINAL;
 	tiles[wallTerminals[1].y][wallTerminals[1].x] = TILE_TYPES.WALL_TERMINAL;
+	tiles[10][16] = TILE_TYPES.WALL;
 	tiles[hideSpots[0].y][hideSpots[0].x] = TILE_TYPES.HIDE_SPOT;
 	tiles[4][33] = TILE_TYPES.STAIR_UP;
 	tiles[20][4] = TILE_TYPES.STAIR_DOWN;
@@ -346,6 +493,7 @@ export function generateTutorialMap() {
 		doors,
 		wallTerminals,
 		hideSpots,
+		distractionNodes,
 		hasCodeTerminal: false,
 		stairsUp: { x: 33, y: 4, to: 0 },
 		stairsDown: { x: 4, y: 20, to: 0 },
@@ -353,6 +501,87 @@ export function generateTutorialMap() {
 		floorCount: 1,
 		tutorial: true,
 	};
+}
+
+function assignRunAccessPlan(floors) {
+	const sideNodes = [];
+
+	for (let floorIdx = 0; floorIdx < floors.length; floorIdx += 1) {
+		const floor = floors[floorIdx];
+		for (const terminal of floor.sideTerminals || []) {
+			sideNodes.push({ floorIdx, terminal });
+		}
+	}
+
+	if (!sideNodes.length) {
+		floors.mainAccessPlan = { passphrase: null, shardCount: 0 };
+		return;
+	}
+
+	const maxShards = Math.min(4, sideNodes.length);
+	const minShards = Math.min(2, maxShards);
+	const shardCount = minShards + ((Math.random() * (maxShards - minShards + 1)) | 0);
+	const passphrase = generatePassphrase();
+	const shards = splitPassphrase(passphrase, shardCount);
+	const selected = [...sideNodes].sort(() => Math.random() - 0.5).slice(0, shardCount);
+
+	for (let i = 0; i < selected.length; i += 1) {
+		const terminal = selected[i].terminal;
+		terminal.authShard = shards[i];
+		terminal.authShardIndex = i + 1;
+		terminal.requiresFirewall = Math.random() < 0.65;
+		terminal.firewallBreached = false;
+		terminal.authShardExtracted = false;
+	}
+
+	if (!selected.some((entry) => entry.terminal.requiresFirewall)) {
+		selected[0].terminal.requiresFirewall = true;
+	}
+
+	for (const node of sideNodes) {
+		if (node.terminal.authShard) {
+			continue;
+		}
+		node.terminal.requiresFirewall = Math.random() < 0.3;
+		node.terminal.firewallBreached = false;
+		node.terminal.authShardExtracted = false;
+	}
+
+	floors.mainAccessPlan = {
+		passphrase,
+		shardCount,
+	};
+}
+
+function generatePassphrase() {
+	const prefix = pick(['ORBIT', 'PHANTOM', 'SABLE', 'VECTOR', 'ARGUS', 'CIPHER']);
+	const suffix = pick(['DELTA', 'NEXUS', 'RAVEN', 'ECLIPSE', 'EMBER', 'HELIOS']);
+	const serial = `${Math.floor(100 + Math.random() * 900)}`;
+	return `${prefix}-${suffix}-${serial}`;
+}
+
+function splitPassphrase(passphrase, count) {
+	const compact = String(passphrase || '').replace(/-/g, '');
+	const size = Math.ceil(compact.length / count);
+	const shards = [];
+
+	for (let i = 0; i < count; i += 1) {
+		const part = compact.slice(i * size, (i + 1) * size);
+		shards.push(part || compact.slice(-2));
+	}
+
+	return shards;
+}
+
+function makeNetworkName(prefix, floorIdx, ordinal) {
+	const salt = `${Math.floor(Math.random() * 256)}`.padStart(3, '0');
+	const floor = `${(floorIdx || 0) + 1}`.padStart(2, '0');
+	const ord = `${ordinal || 0}`.padStart(2, '0');
+	return `${prefix}-F${floor}-${ord}-${salt}`;
+}
+
+function pick(values) {
+	return values[(Math.random() * values.length) | 0];
 }
 
 function placeDebugMainTerminal(tiles, spawn, entrance) {
@@ -385,13 +614,19 @@ function addPillarsInLargeRooms(tiles, rooms, protectedPoints) {
 			continue;
 		}
 
-		for (let y = room.y + 2; y <= room.y + room.h - 3; y += 3) {
-			for (let x = room.x + 2; x <= room.x + room.w - 3; x += 3) {
+		const pattern = pick(['dense', 'offset', 'sparse']);
+		const yStart = pattern === 'offset' ? room.y + 3 : room.y + 2;
+		const xStart = pattern === 'offset' ? room.x + 3 : room.x + 2;
+		const spacing = pattern === 'sparse' ? 4 : 3;
+		const keepChance = pattern === 'dense' ? 0.88 : pattern === 'offset' ? 0.72 : 0.56;
+
+		for (let y = yStart; y <= room.y + room.h - 3; y += spacing) {
+			for (let x = xStart; x <= room.x + room.w - 3; x += spacing) {
 				if (tiles[y][x] !== TILE_TYPES.FLOOR) {
 					continue;
 				}
 
-				if (Math.random() < 0.25) {
+				if (Math.random() > keepChance) {
 					continue;
 				}
 
@@ -419,50 +654,315 @@ function addCorporatePartitions(tiles, rooms, protectedPoints) {
 			continue;
 		}
 
+		const mode = pick(['single', 'single', 'parallel', 'lshape']);
 		const horizontal = room.w >= room.h;
 
-		if (horizontal) {
-			const y = room.y + ((room.h / 2) | 0);
-			let gapPlaced = 0;
+		if (mode === 'parallel' && room.w >= 10 && room.h >= 7) {
+			if (horizontal) {
+				paintPartitionLine(tiles, protectedPoints, room, room.y + ((room.h / 3) | 0), true);
+				paintPartitionLine(tiles, protectedPoints, room, room.y + (((room.h * 2) / 3) | 0), true);
+			} else {
+				paintPartitionLine(tiles, protectedPoints, room, room.x + ((room.w / 3) | 0), false);
+				paintPartitionLine(tiles, protectedPoints, room, room.x + (((room.w * 2) / 3) | 0), false);
+			}
+			continue;
+		}
+
+		if (mode === 'lshape' && room.w >= 9 && room.h >= 7) {
+			const cornerX = room.x + ((room.w / 2) | 0);
+			const cornerY = room.y + ((room.h / 2) | 0);
 
 			for (let x = room.x + 1; x < room.x + room.w - 1; x += 1) {
 				const gapSlot = (x - room.x) % 4 === 0;
-				const protectedNear = protectedPoints.some((point) => Math.abs(point.x - x) <= 1 && Math.abs(point.y - y) <= 1);
-
-				if (gapSlot || protectedNear) {
-					gapPlaced += 1;
-					continue;
+				const protectedNear = protectedPoints.some((point) => Math.abs(point.x - x) <= 1 && Math.abs(point.y - cornerY) <= 1);
+				if (!gapSlot && !protectedNear) {
+					tiles[cornerY][x] = TILE_TYPES.WALL;
 				}
-
-				tiles[y][x] = TILE_TYPES.WALL;
 			}
 
-			if (gapPlaced < 2) {
-				tiles[y][room.x + 2] = TILE_TYPES.FLOOR;
-				tiles[y][room.x + room.w - 3] = TILE_TYPES.FLOOR;
-			}
-		} else {
-			const x = room.x + ((room.w / 2) | 0);
-			let gapPlaced = 0;
-
-			for (let y = room.y + 1; y < room.y + room.h - 1; y += 1) {
+			for (let y = cornerY; y < room.y + room.h - 1; y += 1) {
 				const gapSlot = (y - room.y) % 4 === 0;
-				const protectedNear = protectedPoints.some((point) => Math.abs(point.x - x) <= 1 && Math.abs(point.y - y) <= 1);
+				const protectedNear = protectedPoints.some((point) => Math.abs(point.x - cornerX) <= 1 && Math.abs(point.y - y) <= 1);
+				if (!gapSlot && !protectedNear) {
+					tiles[y][cornerX] = TILE_TYPES.WALL;
+				}
+			}
+			continue;
+		}
 
-				if (gapSlot || protectedNear) {
-					gapPlaced += 1;
+		if (horizontal) {
+			paintPartitionLine(tiles, protectedPoints, room, room.y + ((room.h / 2) | 0), true);
+		} else {
+			paintPartitionLine(tiles, protectedPoints, room, room.x + ((room.w / 2) | 0), false);
+		}
+	}
+}
+
+function paintPartitionLine(tiles, protectedPoints, room, axisValue, horizontal) {
+	let gapPlaced = 0;
+
+	if (horizontal) {
+		const y = axisValue;
+		for (let x = room.x + 1; x < room.x + room.w - 1; x += 1) {
+			const gapSlot = (x - room.x) % 4 === 0;
+			const protectedNear = protectedPoints.some((point) => Math.abs(point.x - x) <= 1 && Math.abs(point.y - y) <= 1);
+
+			if (gapSlot || protectedNear) {
+				gapPlaced += 1;
+				continue;
+			}
+
+			tiles[y][x] = TILE_TYPES.WALL;
+		}
+
+		if (gapPlaced < 2) {
+			tiles[y][room.x + 2] = TILE_TYPES.FLOOR;
+			tiles[y][room.x + room.w - 3] = TILE_TYPES.FLOOR;
+		}
+		return;
+	}
+
+	const x = axisValue;
+	for (let y = room.y + 1; y < room.y + room.h - 1; y += 1) {
+		const gapSlot = (y - room.y) % 4 === 0;
+		const protectedNear = protectedPoints.some((point) => Math.abs(point.x - x) <= 1 && Math.abs(point.y - y) <= 1);
+
+		if (gapSlot || protectedNear) {
+			gapPlaced += 1;
+			continue;
+		}
+
+		tiles[y][x] = TILE_TYPES.WALL;
+	}
+
+	if (gapPlaced < 2) {
+		tiles[room.y + 2][x] = TILE_TYPES.FLOOR;
+		tiles[room.y + room.h - 3][x] = TILE_TYPES.FLOOR;
+	}
+}
+
+function canPlaceRoom(room, existingRooms) {
+	for (const other of existingRooms) {
+		const separated =
+			room.x + room.w + 2 <= other.x ||
+			other.x + other.w + 2 <= room.x ||
+			room.y + room.h + 2 <= other.y ||
+			other.y + other.h + 2 <= room.y;
+
+		if (!separated) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+function pickRoomProfile() {
+	const roll = Math.random();
+
+	if (roll < 0.45) {
+		return { w: 4 + ((Math.random() * 3) | 0), h: 4 + ((Math.random() * 2) | 0) };
+	}
+
+	if (roll < 0.8) {
+		return { w: 6 + ((Math.random() * 3) | 0), h: 5 + ((Math.random() * 3) | 0) };
+	}
+
+	return { w: 8 + ((Math.random() * 3) | 0), h: 6 + ((Math.random() * 3) | 0) };
+}
+
+function addDistractionNodes(tiles, rooms, protectedPoints, floorIdx) {
+	const nodes = [];
+	const candidates = [];
+	const nodeTarget = 2 + ((Math.random() * 4) | 0);
+
+	for (const room of rooms.slice(1)) {
+		for (let y = room.y + 1; y < room.y + room.h - 1; y += 1) {
+			for (let x = room.x + 1; x < room.x + room.w - 1; x += 1) {
+				if (tiles[y][x] !== TILE_TYPES.FLOOR) {
 					continue;
 				}
 
-				tiles[y][x] = TILE_TYPES.WALL;
-			}
+				const protectedNear = protectedPoints.some((point) => Math.abs(point.x - x) <= 1 && Math.abs(point.y - y) <= 1);
+				if (protectedNear) {
+					continue;
+				}
 
-			if (gapPlaced < 2) {
-				tiles[room.y + 2][x] = TILE_TYPES.FLOOR;
-				tiles[room.y + room.h - 3][x] = TILE_TYPES.FLOOR;
+				const nearWall =
+					tiles[y - 1]?.[x] === TILE_TYPES.WALL ||
+					tiles[y + 1]?.[x] === TILE_TYPES.WALL ||
+					tiles[y]?.[x - 1] === TILE_TYPES.WALL ||
+					tiles[y]?.[x + 1] === TILE_TYPES.WALL;
+
+				if (nearWall) {
+					candidates.push({ x, y });
+				}
 			}
 		}
 	}
+
+	for (let i = 0; i < candidates.length && nodes.length < nodeTarget; i += 1) {
+		const pickIdx = i + ((Math.random() * Math.max(1, candidates.length - i)) | 0);
+		const selected = candidates[pickIdx];
+		candidates[pickIdx] = candidates[i];
+
+		if (nodes.some((node) => Math.abs(node.x - selected.x) + Math.abs(node.y - selected.y) < 4)) {
+			continue;
+		}
+
+		const type = pick(['vent', 'lights', 'junction', 'wallpanel']);
+		let nodeX = selected.x;
+		let nodeY = selected.y;
+
+		if (type === 'wallpanel') {
+			const wallMount = findAdjacentWallTile(tiles, selected.x, selected.y, protectedPoints);
+			if (!wallMount) {
+				continue;
+			}
+			nodeX = wallMount.x;
+			nodeY = wallMount.y;
+		}
+
+		if (nodes.some((node) => Math.abs(node.x - nodeX) + Math.abs(node.y - nodeY) < 3)) {
+			continue;
+		}
+
+		const ordinal = nodes.length + 1;
+		nodes.push({
+			id: `${type}_${ordinal}`,
+			networkName: makeNetworkName(type.toUpperCase(), floorIdx || 0, ordinal),
+			x: nodeX,
+			y: nodeY,
+			desc:
+				type === 'vent'
+					? 'Węzeł wentylacji'
+					: type === 'lights'
+						? 'Sterownik oświetlenia'
+						: type === 'junction'
+							? 'Panel energetyczny'
+							: 'Panel scienny',
+			type,
+			cooldownMs: type === 'junction' ? 8500 : type === 'wallpanel' ? 7800 : 7000,
+			durationMs: type === 'vent' ? 7200 : type === 'lights' ? 6200 : 5200,
+		});
+	}
+
+	return nodes;
+}
+
+function ensureCriticalPaths(tiles, entrance, mainTerminal, sideTerminals, distractionNodes) {
+	const criticalPoints = [
+		mainTerminal,
+		...(sideTerminals || []),
+		...((distractionNodes || []).filter((node) => node?.type !== 'wallpanel')),
+	]
+		.filter(Boolean)
+		.map((point) => ({ x: point.x | 0, y: point.y | 0 }));
+
+	for (const point of criticalPoints) {
+		if (hasPath(tiles, entrance, point)) {
+			continue;
+		}
+		carveRoute(tiles, entrance, point);
+	}
+}
+
+function findAdjacentWallTile(tiles, x, y, protectedPoints) {
+	const offsets = [
+		{ x: 0, y: -1 },
+		{ x: 1, y: 0 },
+		{ x: 0, y: 1 },
+		{ x: -1, y: 0 },
+	];
+
+	for (const offset of offsets) {
+		const wx = x + offset.x;
+		const wy = y + offset.y;
+
+		if (tiles[wy]?.[wx] !== TILE_TYPES.WALL) {
+			continue;
+		}
+
+		const protectedNear = protectedPoints.some((point) => Math.abs(point.x - wx) <= 1 && Math.abs(point.y - wy) <= 1);
+		if (protectedNear) {
+			continue;
+		}
+
+		return { x: wx, y: wy };
+	}
+
+	return null;
+}
+
+function hasPath(tiles, start, goal) {
+	const w = tiles[0]?.length || 0;
+	const h = tiles.length;
+	if (!w || !h) {
+		return false;
+	}
+
+	const sx = start.x | 0;
+	const sy = start.y | 0;
+	const gx = goal.x | 0;
+	const gy = goal.y | 0;
+
+	const queue = [{ x: sx, y: sy }];
+	const seen = new Set([`${sx},${sy}`]);
+	const dirs = [
+		{ x: 1, y: 0 },
+		{ x: -1, y: 0 },
+		{ x: 0, y: 1 },
+		{ x: 0, y: -1 },
+	];
+
+	for (let i = 0; i < queue.length; i += 1) {
+		const current = queue[i];
+		if (current.x === gx && current.y === gy) {
+			return true;
+		}
+
+		for (const dir of dirs) {
+			const nx = current.x + dir.x;
+			const ny = current.y + dir.y;
+
+			if (nx < 0 || ny < 0 || nx >= w || ny >= h) {
+				continue;
+			}
+
+			if (tiles[ny][nx] === TILE_TYPES.WALL) {
+				continue;
+			}
+
+			const key = `${nx},${ny}`;
+			if (seen.has(key)) {
+				continue;
+			}
+
+			seen.add(key);
+			queue.push({ x: nx, y: ny });
+		}
+	}
+
+	return false;
+}
+
+function carveRoute(tiles, start, goal) {
+	let x = start.x | 0;
+	let y = start.y | 0;
+	const gx = goal.x | 0;
+	const gy = goal.y | 0;
+
+	while (x !== gx) {
+		tiles[y][x] = TILE_TYPES.FLOOR;
+		x += x < gx ? 1 : -1;
+	}
+
+	while (y !== gy) {
+		tiles[y][x] = TILE_TYPES.FLOOR;
+		y += y < gy ? 1 : -1;
+	}
+
+	tiles[gy][gx] = TILE_TYPES.FLOOR;
 }
 
 function placeStairTile(map, stairType, preferredRoomIndex, fallbackPoint, occupiedTiles = new Set()) {

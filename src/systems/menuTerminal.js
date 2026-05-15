@@ -291,6 +291,8 @@ async function cmdHelp(args) {
   appendLine('help | help crew | help runs | help marketplace', 'dim');
   appendLine('help loadout | help df', 'dim');
   appendLine('whoami | status | wallet | history | clear', 'dim');
+  appendLine('LIVE RUN NOTE: side terminals may require breach firewall before dump creds', 'dim');
+  appendLine('LIVE RUN NOTE: unlock elevator on main terminal after collecting auth shards', 'dim');
   sep();
   section('INTEL');
   appendLine('runs | run list | run show <#|id>', 'dim');

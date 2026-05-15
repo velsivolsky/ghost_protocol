@@ -8,6 +8,48 @@ import { addTrace, activateGhostWindow, activateTraceMask, softenTrace } from '.
 import { noteTutorialCommand, noteTutorialScan } from './tutorial.js';
 import { grantQuickHack } from './quickhacks.js';
 
+const TERMINAL_HEAT_DECAY_PER_SEC = 6.5;
+const TERMINAL_HEAT_OVERHEAT_DECAY_PER_SEC = 3.25;
+const TERMINAL_HEAT_RECOVER_THRESHOLD = 58;
+const TERMINAL_HEAT_CRASH_DURATION_MS = 4200;
+
+const COMMAND_HEAT_COSTS = {
+  connect: 5,
+  disconnect: 0,
+  scan_local: 4,
+  scan_network: 6,
+  download_map: 8,
+  download_hack: 12,
+  dump_creds: 16,
+  breach_firewall: 30,
+  transfer_credits: 10,
+  inject: 14,
+  breach: 16,
+  deploy: 14,
+  override: 16,
+  set_friendly: 12,
+  unlock: 8,
+  reroute: 10,
+  disable: 14,
+  spoof: 4,
+  mask_trace: 5,
+  ghost: 5,
+  blackout: 9,
+  ping: 0,
+  mirror: 7,
+  trigger_vent: 4,
+  vent_off: 2,
+  cut_lights: 6,
+  trip_panel: 7,
+  clear: 0,
+  auto_connect_guard: 0,
+  blind: 12,
+  cripple: 12,
+  ddos: 24,
+  slow: 10,
+  crash: 18,
+};
+
 export function initTerminalRuntime() {
   if (!G.terminalRuntime || !G.dom.terminalOverlay) {
     return;
@@ -47,6 +89,10 @@ export function resetTerminalRuntime() {
   G.terminalRuntime.responseDelayMs = 0;
   G.terminalRuntime.scrambleUntil = 0;
   G.terminalRuntime.falseOutputUntil = 0;
+  G.terminalRuntime.heat = 0;
+  G.terminalRuntime.overheatMode = false;
+  G.terminalRuntime.crashUntil = 0;
+  G.terminalRuntime.lastHeatSource = 'none';
   G.terminalRuntime.inputBuffer = '';
   G.terminalRuntime.history = [];
   G.terminalRuntime.historyCursor = -1;
@@ -155,6 +201,7 @@ export function tickTerminalRuntime(dt) {
 
   G.terminalRuntime.commandCooldownMs = Math.max(0, G.terminalRuntime.commandCooldownMs - dt);
   G.terminalRuntime.systemLogTickMs += dt;
+  updateTerminalHeatState(dt);
 
   if (G.terminalRuntime.pendingCommand) {
     G.terminalRuntime.pendingCommand.remainingMs -= dt;
@@ -209,8 +256,28 @@ export function syncTerminalOverlay() {
   if (G.dom.terminalNetworkStatus) {
     G.dom.terminalNetworkStatus.textContent = runtime.networkStatus || 'DORMANT';
   }
+  if (G.dom.terminalAuthShards) {
+    const required = Math.max(0, Number(G.mainTerminalAuth?.requiredShards || 0));
+    const recovered = Object.keys(G.mainTerminalAuth?.recoveredByNode || {}).length;
+    G.dom.terminalAuthShards.textContent = `${recovered}/${required}`;
+  }
   if (G.dom.terminalRisk) {
     G.dom.terminalRisk.textContent = `${Math.round(trace.risk || 0)}%`;
+  }
+  if (G.dom.terminalHeatState) {
+    G.dom.terminalHeatState.textContent = getTerminalHeatStateLabel();
+  }
+  if (G.dom.terminalHeatFill) {
+    G.dom.terminalHeatFill.style.width = `${Math.max(0, Math.min(100, G.terminalRuntime.heat || 0))}%`;
+  }
+  if (G.dom.terminalOverlay) {
+    G.dom.terminalOverlay.classList.toggle('rt-overheat', !!G.terminalRuntime.overheatMode && performance.now() >= (G.terminalRuntime.crashUntil || 0));
+    G.dom.terminalOverlay.classList.toggle('rt-crash', performance.now() < (G.terminalRuntime.crashUntil || 0));
+    const panel = G.dom.terminalOverlay.querySelector('.rt-panel');
+    if (panel) {
+      panel.classList.toggle('rt-overheat', !!G.terminalRuntime.overheatMode && performance.now() >= (G.terminalRuntime.crashUntil || 0));
+      panel.classList.toggle('rt-crash', performance.now() < (G.terminalRuntime.crashUntil || 0));
+    }
   }
   if (G.dom.terminalPending) {
     G.dom.terminalPending.textContent = runtime.pendingCommand
@@ -230,6 +297,12 @@ export function syncTerminalOverlay() {
 function queueTerminalCommand(rawInput) {
   if (G.terminalRuntime.commandCooldownMs > 0) {
     pushTerminalLine('pipeline busy. wait for command cooldown.', 'warn');
+    return;
+  }
+
+  if (performance.now() < (G.terminalRuntime.crashUntil || 0)) {
+    pushTerminalLine('terminal crash recovery in progress.', 'bad');
+    addTrace(1.8, 'crash');
     return;
   }
 
@@ -255,7 +328,7 @@ function queueTerminalCommand(rawInput) {
   }
 
   const target = resolveConnectedTarget();
-  const latency = def.latencyMs + (G.terminalRuntime.responseDelayMs || 0);
+  const latency = def.latencyMs + (G.terminalRuntime.responseDelayMs || 0) + getTerminalHeatPenaltyMs();
   const scrambleActive = performance.now() < (G.terminalRuntime.scrambleUntil || 0);
 
   G.terminalRuntime.pendingCommand = {
@@ -266,6 +339,8 @@ function queueTerminalCommand(rawInput) {
     remainingMs: latency,
     scrambled: scrambleActive && def.id !== 'help',
   };
+
+  addTerminalHeat(getCommandHeatCost(parsed.commandId), parsed.commandId);
 
   G.terminalRuntime.commandCooldownMs = 120;
   if (def.noise > 0) {
@@ -285,6 +360,12 @@ function resolveCommandExecution(pending) {
   if (commandId === 'help') {
     runHelp(args);
     noteTutorialCommand('help', args);
+    return;
+  }
+
+  if (commandId === 'clear') {
+    runClear();
+    noteTutorialCommand('clear', args);
     return;
   }
 
@@ -329,6 +410,20 @@ function resolveCommandExecution(pending) {
   if (commandId === 'download_hack') {
     if (runDownloadHack(target)) {
       noteTutorialCommand('download_hack', args);
+    }
+    return;
+  }
+
+  if (commandId === 'dump_creds') {
+    if (runDumpCreds(target)) {
+      noteTutorialCommand('dump_creds', args);
+    }
+    return;
+  }
+
+  if (commandId === 'breach_firewall') {
+    if (runBreachFirewall(target)) {
+      noteTutorialCommand('breach_firewall', args);
     }
     return;
   }
@@ -428,6 +523,45 @@ function resolveCommandExecution(pending) {
     return;
   }
 
+  if (commandId === 'trigger_vent') {
+    if (runDistractionCommand('trigger_vent', 'vent', target)) {
+      noteTutorialCommand('trigger_vent', args);
+    }
+    return;
+  }
+
+  if (commandId === 'vent_off') {
+    if (runDistractionCommand('vent_off', 'vent', target)) {
+      noteTutorialCommand('vent_off', args);
+    }
+    return;
+  }
+
+  if (commandId === 'cut_lights') {
+    if (runDistractionCommand('cut_lights', 'lights', target)) {
+      noteTutorialCommand('cut_lights', args);
+    }
+    return;
+  }
+
+  if (commandId === 'trip_panel') {
+    if (runDistractionCommand('trip_panel', 'junction', target)) {
+      noteTutorialCommand('trip_panel', args);
+    }
+    return;
+  }
+
+  if (commandId === 'auto_connect_guard') {
+    runAutoConnectGuard(args[0]);
+    return;
+  }
+
+  const QH_COMMANDS = ['blind', 'cripple', 'ddos', 'slow', 'crash'];
+  if (QH_COMMANDS.includes(commandId)) {
+    runQuickHackOnTarget(commandId, target);
+    return;
+  }
+
   pushTerminalLine('command not wired yet.', 'warn');
 }
 
@@ -454,10 +588,18 @@ function runConnect(targetId) {
   G.terminalRuntime.connectedTargetLabel = found.label;
   pushTerminalLine(`uplink established -> ${found.id} [${found.type}]`, 'ok');
 
+  if (found.type === 'mainterm' && !isMainTerminalAccessUnlocked()) {
+    const progress = getMainAuthProgress();
+    pushTerminalLine(`main terminal locked [${progress.recovered}/${progress.required} shards]`, 'warn');
+    pushTerminalLine('flow: connect node_side_# -> breach firewall -> dump creds', 'dim');
+  }
+
   if (found.type === 'wterm') {
     pushTerminalLine(`door control path detected. next command: unlock`, 'dim');
   } else if (found.type === 'door') {
     pushTerminalLine(`direct lock handle detected. next command: unlock`, 'dim');
+  } else if (found.type === 'distract') {
+    pushTerminalLine('distraction node ready. commands: vent on | vent off | lights cut | junction overload', 'dim');
   }
 
   addTrace(1.5, 'connect');
@@ -497,7 +639,6 @@ function runScanLocal() {
 
 function runScanNetwork() {
   const all = enumerateHackTargets(true);
-  updateScanHighlights(all);
   pushTerminalLine(`scan network: ${all.length} known node(s)`, 'sys');
   for (const item of all.slice(0, 12)) {
     pushTerminalLine(formatScanLine(item, false), getScanLineClass(item));
@@ -551,7 +692,80 @@ function runTransferCredits(target) {
   return true;
 }
 
-function requireSideTerminalTarget(target, commandLabel) {
+function runDumpCreds(target) {
+  const side = requireSideTerminalTarget(target, 'dump creds', { requireAuthExtracted: false });
+  if (!side) {
+    return false;
+  }
+
+  if (!side.ref?.authShard) {
+    pushTerminalLine('credential cache empty on this node.', 'warn');
+    return false;
+  }
+
+  if (side.ref.authShardExtracted) {
+    pushTerminalLine(`auth shard already extracted from ${side.id}`, 'dim');
+    return false;
+  }
+
+  if (!G.mainTerminalAuth) {
+    G.mainTerminalAuth = {
+      requiredShards: 0,
+      recoveredByNode: {},
+      unlocked: true,
+      passphrasePreview: null,
+    };
+  }
+
+  const shard = String(side.ref.authShard || '').toUpperCase();
+  const shardIndex = side.ref.authShardIndex || 1;
+
+  side.ref.authShardExtracted = true;
+  G.mainTerminalAuth.recoveredByNode = G.mainTerminalAuth.recoveredByNode || {};
+  G.mainTerminalAuth.recoveredByNode[side.id] = shard;
+
+  const progress = getMainAuthProgress();
+  const recovered = getRecoveredShardsOrdered();
+  G.mainTerminalAuth.passphrasePreview = recovered.join('-');
+
+  pushTerminalLine(`auth shard ${shardIndex}/${progress.required}: ${shard}`, 'ok');
+  pushTerminalLine(`main auth progress: ${progress.recovered}/${progress.required}`, 'dim');
+
+  if (progress.required > 0 && progress.recovered >= progress.required) {
+    G.mainTerminalAuth.unlocked = true;
+    pushTerminalLine('MAIN AUTH KEY reconstructed. main terminal unlocked.', 'ok');
+    pushTerminalLine('next: connect node_main -> unlock elevator', 'dim');
+  }
+
+  return true;
+}
+
+function runBreachFirewall(target) {
+  const side = requireSideTerminalTarget(target, 'breach firewall', { requireOpenFirewall: false, requireAuthExtracted: false });
+  if (!side) {
+    return false;
+  }
+
+  if (!side.ref?.requiresFirewall) {
+    side.ref.firewallBreached = true;
+    pushTerminalLine('no active ICE on this node. firewall already open.', 'dim');
+    return true;
+  }
+
+  if (side.ref.firewallBreached) {
+    pushTerminalLine('firewall already breached on this node.', 'dim');
+    return true;
+  }
+
+  side.ref.firewallBreached = true;
+  addTrace(4.6, 'firewall-breach');
+  pushTerminalLine(`ICE broken on ${side.id}. data extraction channel opened.`, 'warn');
+  return true;
+}
+
+function requireSideTerminalTarget(target, commandLabel, options = {}) {
+  const { requireOpenFirewall = true, requireAuthExtracted = true } = options;
+
   if (!target || target.type !== 'sterm') {
     pushTerminalLine(`${commandLabel} requires connected side terminal node`, 'warn');
     pushTerminalLine('flow: scan local -> connect node_side_# -> command', 'dim');
@@ -560,6 +774,18 @@ function requireSideTerminalTarget(target, commandLabel) {
 
   if (target.ref?.used) {
     pushTerminalLine(`terminal already consumed: ${target.id}`, 'warn');
+    return null;
+  }
+
+  if (requireOpenFirewall && target.ref?.requiresFirewall && !target.ref?.firewallBreached) {
+    pushTerminalLine(`access denied by ICE on ${target.id}`, 'bad');
+    pushTerminalLine('run: breach firewall (high heat, slow)', 'dim');
+    return null;
+  }
+
+  if (requireAuthExtracted && target.ref?.authShard && !target.ref?.authShardExtracted) {
+    pushTerminalLine(`terminal holds required auth shard (${target.id})`, 'warn');
+    pushTerminalLine('extract first: dump creds', 'dim');
     return null;
   }
 
@@ -597,6 +823,11 @@ function runInject(args, target) {
   }
 
   if (target.type === 'mainterm' || target.type === 'sterm') {
+    if (target.type === 'mainterm' && !isMainTerminalAccessUnlocked()) {
+      const progress = getMainAuthProgress();
+      pushTerminalLine(`main terminal locked [${progress.recovered}/${progress.required} shards]`, 'warn');
+      return;
+    }
     G.hackSpeedBonus = clamp((G.hackSpeedBonus || 0) + 0.25, 0, 1.8);
     registerTimedHack('inject-buffer', target.id, 8000, () => {
       G.hackSpeedBonus = Math.max(0, (G.hackSpeedBonus || 0) - 0.25);
@@ -652,6 +883,11 @@ function runDeploy(args, target) {
   }
 
   if (target.type === 'sterm' || target.type === 'mainterm') {
+    if (target.type === 'mainterm' && !isMainTerminalAccessUnlocked()) {
+      const progress = getMainAuthProgress();
+      pushTerminalLine(`main terminal locked [${progress.recovered}/${progress.required} shards]`, 'warn');
+      return;
+    }
     G.alert = clamp((G.alert || 0) - 3, 0, 100);
     pushTerminalLine(`${tool} deployed across relay path`, 'ok');
     return;
@@ -707,7 +943,7 @@ function runSetFriendly(target) {
   pushTerminalLine(`set friendly unsupported for ${target.type}`, 'warn');
 }
 
-function runUnlock(_args, target) {
+function runUnlock(args, target) {
   if (!target) {
     pushTerminalLine('unlock failed: no uplink.', 'warn');
     pushTerminalLine('door flow: scan local -> connect panel_# -> unlock', 'dim');
@@ -730,6 +966,24 @@ function runUnlock(_args, target) {
       pushTerminalLine(`if needed: disconnect`, 'dim');
       return;
     }
+  }
+
+  if (target.type === 'mainterm' && String(args[0] || '').toLowerCase() === 'elevator') {
+    if (!isMainTerminalAccessUnlocked()) {
+      const progress = getMainAuthProgress();
+      pushTerminalLine(`main auth incomplete [${progress.recovered}/${progress.required}]`, 'warn');
+      pushTerminalLine('collect shards: breach firewall + dump creds on side terminals', 'dim');
+      return;
+    }
+
+    if (G.elevatorUnlocked) {
+      pushTerminalLine('elevator uplink already unlocked.', 'dim');
+      return;
+    }
+
+    G.elevatorUnlocked = true;
+    pushTerminalLine('elevator uplink unlocked for floor transitions.', 'ok');
+    return;
   }
 
   pushTerminalLine(`unlock unsupported for ${target.type}`, 'warn');
@@ -765,6 +1019,97 @@ function runDisable(_args, target) {
   }
 
   pushTerminalLine(`disable unsupported for ${target.type}`, 'warn');
+}
+
+function runDistractionCommand(action, expectedType, target) {
+  if (!target || target.type !== 'distract') {
+    pushTerminalLine('distraction command requires a connected distraction node', 'warn');
+    pushTerminalLine('flow: scan local -> connect vent_1/lights_1/junction_1/wallpanel_1 -> command', 'dim');
+    return false;
+  }
+
+  const ref = target.ref;
+  if (!ref) {
+    pushTerminalLine('node failure: distraction reference missing.', 'bad');
+    return false;
+  }
+
+  if (expectedType && ref.nodeType && ref.nodeType !== expectedType) {
+    pushTerminalLine(`command rejected: ${target.id} is ${ref.nodeType}, not ${expectedType}`, 'bad');
+    return false;
+  }
+
+  const now = performance.now();
+  if (action === 'vent_off') {
+    if (!ref.active) {
+      pushTerminalLine(`vent already idle on ${target.id}`, 'dim');
+      return false;
+    }
+
+    ref.active = false;
+    ref.activeUntil = now;
+    pushTerminalLine(`vent lure stopped on ${target.id}`, 'ok');
+
+    if (G.tutorial?.active) {
+      pushTerminalLine(`tutorial ✓ vent off accepted on ${target.id}`, 'ok');
+    }
+    return true;
+  }
+
+  if (now < (ref.cooldownUntil || 0)) {
+    pushTerminalLine(`node cooling down: ${target.id}`, 'warn');
+    return false;
+  }
+
+  ref.active = true;
+  ref.activeUntil = now + (ref.durationMs || 6000);
+  ref.cooldownUntil = now + (ref.cooldownMs || 7000);
+
+  const lureX = ref.x;
+  const lureY = ref.y;
+
+  let guardRedirects = 0;
+  for (const guard of byType('guard')) {
+    if (guard.dead || guard.offline || guard.state === 'chase') {
+      continue;
+    }
+
+    guard.state = 'search';
+    guard.lastSeen = { x: lureX, y: lureY };
+    guard.investigateX = lureX;
+    guard.investigateY = lureY;
+    guard.investigateUntil = now + Math.max(4500, (ref.durationMs || 6000) + 1200);
+    guard.searchTimer = 0;
+    guardRedirects += 1;
+  }
+
+  let techRedirects = 0;
+  for (const tech of byType('tech')) {
+    if (tech.dead || tech.state === 'repair' || tech.state === 'repairing') {
+      continue;
+    }
+
+    tech.state = 'investigate';
+    tech.investigateTargetId = ref.id;
+    tech.inspectTimer = 0;
+    techRedirects += 1;
+  }
+
+  pushTerminalLine(`distraction active on ${target.id}`, 'ok');
+  pushTerminalLine(`redirected patrols: guards ${guardRedirects}, techs ${techRedirects}`, 'dim');
+
+  if (G.tutorial?.active) {
+    const actionLabel = action === 'trigger_vent'
+      ? 'vent on'
+      : action === 'cut_lights'
+        ? 'lights cut'
+        : 'junction overload';
+
+    pushTerminalLine(`tutorial ✓ ${actionLabel} accepted on ${target.id}`, 'ok');
+    pushTerminalLine('tutorial hint: chain another distraction or finish with help distraction', 'dim');
+  }
+
+  return true;
 }
 
 function registerTimedHack(label, targetId, timeLeftMs, onExpire) {
@@ -809,6 +1154,17 @@ function enumerateHackTargets(includeFar) {
     }, maxDist);
   }
 
+  for (const distract of byType('distract')) {
+    pushTarget(out, {
+      id: distract.id || `distract_${out.length}`,
+      type: 'distract',
+      label: distract.desc || 'Distraction Node',
+      anchor: distract,
+      ref: distract,
+      dist: dst(distract, G.P),
+    }, maxDist);
+  }
+
   for (const guard of byType('guard')) {
     pushTarget(out, {
       id: guard.id || `guard_${out.length}`,
@@ -844,7 +1200,7 @@ function enumerateHackTargets(includeFar) {
 
   if (G.mainTerminal) {
     pushTarget(out, {
-      id: 'node_main',
+      id: G.mainTerminal.id || 'node_main',
       type: 'mainterm',
       label: 'Main Terminal',
       anchor: G.mainTerminal,
@@ -957,7 +1313,8 @@ function runHelp(args) {
     pushTerminalLine('HELP TOPICS', 'ok');
     pushTerminalLine('help basics  | help doors  | help cameras  | help stealth', 'dim');
     pushTerminalLine('help guards  | help technicians  | help terminals  | help mainterm', 'dim');
-    pushTerminalLine('tutorial     | scan local  | scan network', 'dim');
+    pushTerminalLine('help distraction', 'dim');
+    pushTerminalLine('tutorial     | clear       | scan local  | scan network', 'dim');
     pushTerminalLine('core commands:', 'dim');
     for (const item of COMMAND_REGISTRY) {
       pushTerminalLine(item.help, 'dim');
@@ -971,6 +1328,8 @@ function runHelp(args) {
     pushTerminalLine('2. connect <target_id>', 'dim');
     pushTerminalLine('3. run a command on the connected target', 'dim');
     pushTerminalLine('4. disconnect', 'dim');
+    pushTerminalLine('extra: clear (wipe screen output)', 'dim');
+    pushTerminalLine('map tooltips show object and network name in brackets', 'dim');
     pushTerminalLine('example: scan local -> connect cam_0 -> inject loop -> disconnect', 'dim');
     return;
   }
@@ -1024,6 +1383,8 @@ function runHelp(args) {
   if (topic === 'terminals') {
     pushTerminalLine('SIDE TERMINAL METHODS', 'ok');
     pushTerminalLine('scan local -> connect node_side_1', 'dim');
+    pushTerminalLine('breach firewall    : slow ICE break, high heat', 'dim');
+    pushTerminalLine('dump creds         : extract auth shard for main terminal', 'dim');
     pushTerminalLine('download map       : reveal map layout', 'dim');
     pushTerminalLine('download hack      : gain one quickhack', 'dim');
     pushTerminalLine('transfer credits   : gain mission credits', 'dim');
@@ -1034,15 +1395,29 @@ function runHelp(args) {
   if (topic === 'mainterm') {
     pushTerminalLine('MAIN TERMINAL METHODS', 'ok');
     pushTerminalLine('scan local -> connect node_main', 'dim');
+    pushTerminalLine('requires side-terminal auth shards before full access', 'dim');
     pushTerminalLine('inject relay     : temporary hack-speed boost', 'dim');
     pushTerminalLine('deploy worm      : pressure/alert manipulation', 'dim');
     pushTerminalLine('reroute          : alert shaping utility', 'dim');
+    pushTerminalLine('unlock elevator  : enables floor transition', 'dim');
     pushTerminalLine('disconnect       : close uplink cleanly', 'dim');
     return;
   }
 
+  if (topic === 'distraction') {
+    pushTerminalLine('DISTRACTION METHODS', 'ok');
+    pushTerminalLine('scan local -> connect vent_1/lights_1/junction_1/wallpanel_1', 'dim');
+    pushTerminalLine('vent on        : air burst lure, low trace (vent only)', 'dim');
+    pushTerminalLine('vent off       : stop ventilation lure (vent only)', 'dim');
+    pushTerminalLine('lights cut     : local flicker, medium trace (lights only)', 'dim');
+    pushTerminalLine('junction overload : spark + alarm chirp (junction only)', 'dim');
+    pushTerminalLine('wall panel is wall-mounted utility hardware', 'dim');
+    pushTerminalLine('active chase has priority over distraction', 'dim');
+    return;
+  }
+
   pushTerminalLine(`unknown help topic: ${topic}`, 'warn');
-  pushTerminalLine('available: basics, doors, cameras, stealth, guards, technicians, terminals, mainterm', 'dim');
+  pushTerminalLine('available: basics, doors, cameras, stealth, guards, technicians, terminals, mainterm, distraction', 'dim');
 }
 
 function runTutorial() {
@@ -1060,9 +1435,28 @@ function runTutorial() {
   pushTerminalLine('disconnect', 'dim');
   pushTerminalLine('guard flow: connect guard_0 -> set friendly / override / disable', 'dim');
   pushTerminalLine('technician flow: connect tech_0 -> set friendly / override / disable', 'dim');
-  pushTerminalLine('side terminal flow: connect node_side_1 -> download map / download hack / transfer credits', 'dim');
-  pushTerminalLine('main terminal flow: connect node_main -> inject relay / deploy worm', 'dim');
+  pushTerminalLine('side terminal flow: connect node_side_1 -> breach firewall -> dump creds', 'dim');
+  pushTerminalLine('distraction flow: connect vent_1 -> vent on (or lights cut / junction overload)', 'dim');
+  pushTerminalLine('loot after ICE break: download map / download hack / transfer credits', 'dim');
+  pushTerminalLine('main terminal flow: connect node_main -> unlock elevator -> inject relay / deploy worm', 'dim');
   pushTerminalLine("need examples later? use help guards / help technicians / help terminals / help mainterm", 'dim');
+}
+
+function runClear() {
+  if (!G.terminalRuntime) {
+    return;
+  }
+
+  G.terminalRuntime.outputLines = [];
+  G.terminalRuntime.renderedOutputCount = 0;
+  G.terminalRuntime.renderedOutputRevision = 0;
+  G.terminalRuntime.outputRevision += 1;
+
+  if (G.dom.terminalOutput) {
+    G.dom.terminalOutput.innerHTML = '';
+  }
+
+  pushTerminalLine('screen cleared.', 'sys', true);
 }
 
 function emitTutorialIntro() {
@@ -1256,6 +1650,8 @@ function formatScanLine(item, includeDistance) {
     ? 'door-panel'
     : item.type === 'door'
       ? 'door'
+      : item.type === 'distract'
+        ? 'distract'
       : item.type;
   return `${item.id} [${label}]${dist}`;
 }
@@ -1266,8 +1662,27 @@ function getScanLineClass(item) {
 	if (item.type === 'drone') return 'scan-drone';
 	if (item.type === 'tech') return 'scan-tech';
 	if (item.type === 'wterm' || item.type === 'door') return 'scan-door';
+  if (item.type === 'distract') return 'scan-terminal';
 	if (item.type === 'mainterm' || item.type === 'sterm') return 'scan-terminal';
 	return 'scan-generic';
+}
+
+function isMainTerminalAccessUnlocked() {
+  return !!G.mainTerminalAuth?.unlocked;
+}
+
+function getMainAuthProgress() {
+  const required = Math.max(0, Number(G.mainTerminalAuth?.requiredShards || 0));
+  const recovered = Object.keys(G.mainTerminalAuth?.recoveredByNode || {}).length;
+  return { required, recovered };
+}
+
+function getRecoveredShardsOrdered() {
+  const values = Object.values(G.mainTerminalAuth?.recoveredByNode || {});
+  return values
+    .map((item) => String(item || '').toUpperCase())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
 }
 
 function clearMovementKeys() {
@@ -1292,4 +1707,252 @@ function escapeHtml(input) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+export function addTerminalHeat(amount, source = 'unknown') {
+  if (!G.terminalRuntime) {
+    return 0;
+  }
+
+  const runtime = G.terminalRuntime;
+  const nextHeat = clamp((runtime.heat || 0) + Math.max(0, amount || 0), 0, runtime.heatMax || 100);
+  runtime.heat = nextHeat;
+  runtime.lastHeatSource = source;
+
+  if (nextHeat >= (runtime.heatCrashThreshold || 96) && performance.now() >= (runtime.crashUntil || 0)) {
+    runtime.crashUntil = performance.now() + TERMINAL_HEAT_CRASH_DURATION_MS;
+    runtime.overheatMode = true;
+    runtime.networkStatus = 'CRASH';
+    runtime.responseDelayMs = Math.max(runtime.responseDelayMs || 0, 320);
+    pushTerminalLine('terminal overload. crash cycle engaged.', 'bad');
+    addTrace(4.5, 'heat-crash');
+  } else if (nextHeat >= (runtime.heatOverheatThreshold || 72)) {
+    runtime.overheatMode = true;
+    if (runtime.networkStatus === 'DORMANT') {
+      runtime.networkStatus = 'OVERHEAT';
+    }
+  }
+
+  syncTerminalOverlay();
+  return nextHeat;
+}
+
+export function getTerminalHeatPenaltyMs() {
+  if (!G.terminalRuntime) {
+    return 0;
+  }
+
+  const runtime = G.terminalRuntime;
+  const heat = runtime.heat || 0;
+  const overheatBoost = runtime.overheatMode ? 120 : 0;
+  const crashBoost = performance.now() < (runtime.crashUntil || 0) ? 240 : 0;
+  const heatPenalty = heat > 55 ? Math.round((heat - 55) * 3.2) : 0;
+
+  return heatPenalty + overheatBoost + crashBoost;
+}
+
+function getCommandHeatCost(commandId) {
+  return COMMAND_HEAT_COSTS[commandId] ?? 8;
+}
+
+function getTerminalHeatStateLabel() {
+  if (!G.terminalRuntime) {
+    return 'NORMAL';
+  }
+
+  const runtime = G.terminalRuntime;
+  if (performance.now() < (runtime.crashUntil || 0)) {
+    return 'CRASH';
+  }
+  if (runtime.overheatMode) {
+    return 'OVERHEAT';
+  }
+  return 'NORMAL';
+}
+
+function updateTerminalHeatState(dt) {
+  if (!G.terminalRuntime) {
+    return;
+  }
+
+  const runtime = G.terminalRuntime;
+  const now = performance.now();
+  const crashing = now < (runtime.crashUntil || 0);
+  const heatDecayPerSec = runtime.overheatMode ? TERMINAL_HEAT_OVERHEAT_DECAY_PER_SEC : TERMINAL_HEAT_DECAY_PER_SEC;
+  const linkedPenalty = runtime.connectedTargetId ? 1.35 : 1;
+  const decayAmount = (dt / 1000) * heatDecayPerSec * linkedPenalty;
+
+  if (!crashing) {
+    runtime.heat = Math.max(0, (runtime.heat || 0) - decayAmount);
+  }
+
+  if (!crashing && runtime.overheatMode && (runtime.heat || 0) <= TERMINAL_HEAT_RECOVER_THRESHOLD) {
+    runtime.overheatMode = false;
+    runtime.networkStatus = 'DORMANT';
+    runtime.responseDelayMs = Math.max(0, (runtime.responseDelayMs || 0) - 40);
+    pushTerminalLine('thermal load normalized.', 'sys');
+  }
+
+  if (!crashing && runtime.networkStatus === 'CRASH') {
+    runtime.networkStatus = runtime.overheatMode ? 'OVERHEAT' : 'DORMANT';
+  }
+
+  if (crashing) {
+    runtime.networkStatus = 'CRASH';
+    runtime.responseDelayMs = Math.max(runtime.responseDelayMs || 0, 320);
+  } else if (runtime.overheatMode && runtime.networkStatus === 'DORMANT') {
+    runtime.networkStatus = 'OVERHEAT';
+  }
+
+  if (!crashing && (runtime.heat || 0) <= 5 && runtime.overheatMode) {
+    runtime.overheatMode = false;
+  }
+
+  if (runtime.heat <= 0 && runtime.networkStatus === 'OVERHEAT') {
+    runtime.networkStatus = 'DORMANT';
+  }
+}
+
+function runAutoConnectGuard(guardId) {
+  const guard = byType('guard').find((g) => g.id === guardId && !g.dead);
+
+  if (!guard) {
+    pushTerminalLine('cel nie odpowiada — sygnal utracony', 'bad');
+    return;
+  }
+
+  G.terminalRuntime.connectedTargetId = guard.id;
+  G.terminalRuntime.connectedTargetType = 'guard';
+  G.terminalRuntime.connectedTargetLabel = guard.desc || guardId;
+
+  pushTerminalLine(`uplink nawiazany -> ${guardId} [GUARD]`, 'ok');
+  pushTerminalLine(`podlaczono: ${guard.desc || guardId}`, 'sys');
+  pushTerminalLine('dostepne hacki: blind | cripple | ddos | slow | crash', 'dim');
+}
+
+function runQuickHackOnTarget(hackId, target) {
+  if (!target || (target.type !== 'guard' && target.type !== 'drone' && target.type !== 'tech')) {
+    pushTerminalLine('quickhack wymaga polaczenia z celem (guard/drone/tech)', 'warn');
+    return;
+  }
+
+  const ref = target.ref;
+  if (!ref || ref.dead || ref.offline) {
+    pushTerminalLine('cel offline — brak sygnalu', 'warn');
+    return;
+  }
+
+  if (hackId === 'blind') {
+    ref.opticsOfflineT = 10000;
+    if (ref.state === 'chase') {
+      ref.state = 'search';
+      ref.detect = 0;
+      ref.searchTimer = 0;
+      ref.lastSeen = null;
+    }
+    pushTerminalLine(`BLIND >> ${target.id} | optyka wylaczona (10s)`, 'ok');
+  } else if (hackId === 'cripple') {
+    ref.motoricsResetT = 10000;
+    pushTerminalLine(`CRIPPLE >> ${target.id} | motoryka zablokowana (10s)`, 'ok');
+  } else if (hackId === 'slow') {
+    ref.motoricsResetT = Math.max(ref.motoricsResetT || 0, 8000);
+    ref.state = 'search';
+    ref.detect = 0;
+    ref.searchTimer = 0;
+    ref.lastSeen = null;
+    pushTerminalLine(`SLOW >> ${target.id} | cel gubi trop`, 'ok');
+  } else if (hackId === 'crash') {
+    ref.motoricsResetT = Math.max(ref.motoricsResetT || 0, 13000);
+    ref.stunT = Math.max(ref.stunT || 0, 1800);
+    pushTerminalLine(`CRASH >> ${target.id} | system przeciazony (13s)`, 'ok');
+  } else if (hackId === 'ddos') {
+    ref.dead = true;
+    ref.offline = true;
+    ref.bodyReported = true;
+    pushTerminalLine(`DDOS >> ${target.id} | pakiety wyslane...`, 'warn');
+    pushTerminalLine('', 'sys');
+    pushTerminalLine('CONNECTION LOST — cel wyeliminowany z sieci', 'bad');
+    G.terminalRuntime.connectedTargetId = null;
+    G.terminalRuntime.connectedTargetType = null;
+    G.terminalRuntime.connectedTargetLabel = 'NONE';
+    if (G.quickHackWindow?.active) {
+      G.quickHackWindow.active = false;
+      if (G.dom.detectPanel) G.dom.detectPanel.style.display = 'none';
+    }
+    rebuildList();
+    return;
+  }
+
+  // Nie-lethal: zamknij okno detekcji ale zostaw terminal
+  if (G.quickHackWindow?.active) {
+    G.quickHackWindow.active = false;
+    if (G.dom.detectPanel) G.dom.detectPanel.style.display = 'none';
+    pushTerminalLine('--- okno awaryjne zamkniete ---', 'dim');
+  }
+
+  rebuildList();
+}
+
+export function openDetectionTerminal(guardId) {
+  if (!G.terminalRuntime) {
+    return;
+  }
+
+  // Otwórz overlay jeśli nie jest otwarty
+  if (!G.terminalRuntime.open) {
+    G.terminalRuntime.open = true;
+    clearMovementKeys();
+    if (G.dom.terminalOverlay) {
+      G.dom.terminalOverlay.classList.add('show');
+    }
+  }
+
+  // Pokaż pasek detekcji
+  if (G.dom.detectPanel) {
+    G.dom.detectPanel.style.display = 'flex';
+  }
+  if (G.dom.detectTimerFill) {
+    G.dom.detectTimerFill.style.width = '100%';
+  }
+
+  if (G.dom.terminalInput) {
+    G.dom.terminalInput.focus();
+  }
+
+  pushTerminalLine('', 'sys');
+  pushTerminalLine('!! ALERT !! WYKRYTO OBECNOSC OPERATORA !!', 'bad');
+  pushTerminalLine(`namierzono zrodlo: ${guardId}`, 'warn');
+  pushTerminalLine('inicjalizacja polaczenia awaryjnego...', 'dim');
+
+  // Auto-connect z opóźnieniem — animacja wgrywania
+  G.terminalRuntime.pendingCommand = {
+    commandId: 'auto_connect_guard',
+    args: [guardId],
+    raw: `>> auto-connect ${guardId}`,
+    target: null,
+    remainingMs: 900,
+    scrambled: false,
+  };
+
+  // Blokuj input przez czas auto-connect
+  G.terminalRuntime.commandCooldownMs = 900;
+
+  syncTerminalOverlay();
+}
+
+export function closeDetectionTerminal() {
+  if (G.dom.detectPanel) {
+    G.dom.detectPanel.style.display = 'none';
+  }
+  if (G.dom.detectTimerFill) {
+    G.dom.detectTimerFill.style.width = '100%';
+  }
+
+  // Rozłącz od strażnika, zostaw terminal otwarty
+  if (G.terminalRuntime?.connectedTargetType === 'guard') {
+    pushTerminalLine('--- polaczenie awaryjne zamkniete ---', 'sys');
+    G.terminalRuntime.connectedTargetId = null;
+    G.terminalRuntime.connectedTargetType = null;
+    G.terminalRuntime.connectedTargetLabel = 'NONE';
+  }
 }

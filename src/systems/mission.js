@@ -16,7 +16,7 @@ export function updateMissionText() {
 
   const floorLabel = `PIĘTRO ${G.floor}/${G.floorCount}`;
   const stairHint = G.stairHintActive
-    ? ' | <span style="color:#7ac8ff">SCHODY: kliknij kafelek, aby przejść</span>'
+    ? ` | <span style="color:${G.elevatorUnlocked ? '#7ac8ff' : '#ff9a3c'}">WINDA: ${G.elevatorUnlocked ? 'kliknij kafelek, aby przejsc' : 'zablokowana - odblokuj w terminalu'}</span>`
     : '';
 
   if (G.missionPhase === 0) {
@@ -64,7 +64,7 @@ function getTutorialMissionText() {
   }
 
   if (step === 8) {
-    return 'TUTORIAL | Side terminal map: <b>connect node_side_1</b> -> <b>download map</b>';
+    return 'TUTORIAL | Side terminal auth: <b>connect node_side_1</b> -> <b>breach firewall</b> -> <b>dump creds</b>';
   }
 
   if (step === 9) {
@@ -72,11 +72,15 @@ function getTutorialMissionText() {
   }
 
   if (step === 10) {
-    return 'TUTORIAL | Main terminal: <b>connect node_main</b> -> <b>inject relay</b> / <b>deploy worm</b>';
+    return 'TUTORIAL | Main terminal: <b>connect node_main</b> -> <b>unlock elevator</b> -> <b>inject relay</b>';
   }
 
   if (step === 11) {
-    return 'TUTORIAL | Encyclopedia: <b>help guards</b> / <b>help technicians</b> / <b>help terminals</b> / <b>help mainterm</b>';
+    return 'TUTORIAL | Distract: <b>connect vent_1/lights_1/junction_1/wallpanel_1</b> -> <b>vent on/off</b> / <b>lights cut</b> / <b>junction overload</b>';
+  }
+
+  if (step === 12) {
+    return 'TUTORIAL | Encyclopedia: <b>help guards</b> / <b>help technicians</b> / <b>help terminals</b> / <b>help mainterm</b> / <b>help distraction</b>';
   }
 
   return 'TUTORIAL | Komplet. Wejdz w normalny run i uzywaj skrotow live terminala';

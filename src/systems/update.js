@@ -6,6 +6,7 @@ import {
 } from '../core/constants.js';
 import { G, byType, initFloorState } from '../core/state.js';
 import { createCamera } from '../entities/camera.js';
+import { createDistraction, tickDistraction } from '../entities/distraction.js';
 import { tickDrone, createDrone } from '../entities/drone.js';
 import { createGuard, tickGuard } from '../entities/guard.js';
 import { createTechnician, tickTechnician } from '../entities/technician.js';
@@ -25,7 +26,8 @@ import { tickTutorial, updateTutorialPanel } from './tutorial.js';
 
 const STAIR_TRANSITION_COOLDOWN_MS = 900;
 
-export function spawnEntities(rooms, wave) {
+export function spawnEntities(map, wave) {
+	const rooms = map.rooms || [];
 	const devices = [];
 	const spawnRooms = getSpawnRooms(rooms);
 
@@ -56,6 +58,11 @@ export function spawnEntities(rooms, wave) {
 		for (let index = 0; index < techCount; index += 1) {
 			devices.push(createTechnician(index, techRoom));
 		}
+	}
+
+	const distractionNodes = map.distractionNodes || [];
+	for (let index = 0; index < distractionNodes.length; index += 1) {
+		devices.push(createDistraction(index, distractionNodes[index]));
 	}
 
 	return devices;
@@ -187,6 +194,10 @@ export function update(dt) {
 		if (!technician.dead) {
 			tickTechnician(technician, simDt);
 		}
+	}
+
+	for (const distraction of byType('distract')) {
+		tickDistraction(distraction, simDt);
 	}
 
 	checkDeadGuardDiscovery();
@@ -393,6 +404,12 @@ function checkStairTransition() {
 		return false;
 	}
 
+	if (!G.elevatorUnlocked) {
+		G.stairTransitionRequested = false;
+		log('Winda zablokowana. Odblokuj: connect node_main -> unlock elevator', 'w');
+		return false;
+	}
+
 	const direction = tile === TILE_TYPES.STAIR_UP ? 1 : -1;
 	const nextFloor = G.floor + direction;
 
@@ -407,7 +424,7 @@ function checkStairTransition() {
 		return false;
 	}
 
-	const devices = spawnEntities(map.rooms, G.wave);
+	const devices = spawnEntities(map, G.wave);
 	const prevMissionPhase = G.missionPhase;
 	const prevMainHacked = G.mainHacked;
 	const entryTile = direction > 0 ? TILE_TYPES.STAIR_DOWN : TILE_TYPES.STAIR_UP;
@@ -545,6 +562,10 @@ function updateCameras(dt) {
 }
 
 function triggerGuardInvestigation() {
+	triggerGuardInvestigationAt(G.P.x, G.P.y);
+}
+
+export function triggerGuardInvestigationAt(targetX, targetY) {
 	if (G.cameraAlertTimer > 0) {
 		return;
 	}
@@ -560,7 +581,10 @@ function triggerGuardInvestigation() {
 			guard.state = 'search';
 		}
 
-		guard.lastSeen = { x: G.P.x, y: G.P.y };
+		guard.lastSeen = { x: targetX, y: targetY };
+		guard.investigateX = targetX;
+		guard.investigateY = targetY;
+		guard.investigateUntil = performance.now() + 7500;
 		guard.searchTimer = 0;
 	}
 

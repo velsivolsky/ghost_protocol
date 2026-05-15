@@ -643,6 +643,11 @@
                 <div class="instructions-line">Na start wpisz: tutorial</div>
                 <div class="instructions-line">Drzwi: scan local -> connect panel_1 -> unlock -> disconnect</div>
                 <div class="instructions-line">Kamera: scan local -> connect cam_0 -> inject loop -> disconnect</div>
+                <div class="instructions-line">Distrakcja: connect vent_1/lights_1/junction_1/wallpanel_1 -> vent on/off / lights cut / junction overload</div>
+                <div class="instructions-line">Side terminal auth: connect node_side_# -> breach firewall -> dump creds</div>
+                <div class="instructions-line">Main terminal access: connect node_main -> unlock elevator</div>
+                <div class="instructions-line">Utility: clear czyści bufor wyjścia terminala.</div>
+                <div class="instructions-line">Tooltipy na mapie pokazują format: Nazwa obiektu (nazwa sieciowa).</div>
                 <div class="instructions-line">Dodatkowe tematy: help basics, help doors, help cameras, help stealth</div>
               </div>
 
@@ -651,9 +656,10 @@
                 <div class="instructions-line"><b>BASIC FLOW:</b> scan local -> connect target -> command -> disconnect</div>
                 <div class="instructions-line"><b>DOORS/CAMERAS:</b> connect panel_1 -> unlock, connect cam_0 -> inject loop/disable</div>
                 <div class="instructions-line"><b>GUARDS/TECH:</b> connect guard_0/tech_0 -> set friendly / override / disable</div>
-                <div class="instructions-line"><b>SIDE TERMINALS:</b> connect node_side_# -> download map / download hack / transfer credits</div>
-                <div class="instructions-line"><b>MAIN TERMINAL:</b> connect node_main -> inject relay / deploy worm / reroute</div>
-                <div class="instructions-line"><b>TOPICS:</b> help guards, help technicians, help terminals, help mainterm</div>
+                <div class="instructions-line"><b>DISTRACTIONS:</b> connect vent_1/lights_1/junction_1/wallpanel_1 -> vent on/off / lights cut / junction overload</div>
+                <div class="instructions-line"><b>SIDE TERMINALS:</b> connect node_side_# -> breach firewall -> dump creds -> download map/hack/credits</div>
+                <div class="instructions-line"><b>MAIN TERMINAL:</b> connect node_main -> unlock elevator -> inject relay / deploy worm / reroute</div>
+                <div class="instructions-line"><b>TOPICS:</b> help guards, help technicians, help terminals, help mainterm, help distraction</div>
               </div>
 
               <div class="instructions-card instructions-card-accent">
@@ -708,6 +714,11 @@
                 </div>
 
                 <div class="legend-item">
+                  <span class="lg-tile" style="background:#0b1320;outline:1px solid #7ac8ff;color:#7ac8ff;">◈</span>
+                  <span>Wezel dystrakcji</span>
+                </div>
+
+                <div class="legend-item">
                   <span class="lg-tile" style="background:#1a0a00;outline:1px solid #ffd700;color:#ffd700;">⊕</span>
                   <span>Terminal glowny</span>
                 </div>
@@ -738,13 +749,13 @@
                 </div>
 
                 <div class="legend-item">
-                  <span class="lg-tile" style="background:#0f1926;outline:1px solid #7ac8ff;color:#7ac8ff;">△</span>
-                  <span>Schody w gore</span>
+                  <span class="lg-tile" style="background:#0f1926;outline:1px solid #7ac8ff;color:#7ac8ff;">⇧</span>
+                  <span>Winda uplink</span>
                 </div>
 
                 <div class="legend-item">
-                  <span class="lg-tile" style="background:#1b1524;outline:1px solid #ffd269;color:#ffd269;">▽</span>
-                  <span>Schody w dol</span>
+                  <span class="lg-tile" style="background:#1b1524;outline:1px solid #c9a8ff;color:#c9a8ff;">⇩</span>
+                  <span>Winda downlink</span>
                 </div>
 
                 <div class="legend-item">
@@ -890,6 +901,13 @@
         <span>REALTIME TERMINAL // LIVE UPLINK</span>
         <span>ESC/TAB CLOSE</span>
       </div>
+      <div id="qh-detect-panel" class="qh-detect-panel" style="display:none">
+        <div class="qh-detect-label">
+          <span class="qh-detect-blink">⚠ WYKRYCIE</span>
+          <span class="qh-detect-hint">— wpisz: blind | cripple | ddos | slow | crash</span>
+        </div>
+        <div class="qh-detect-bar"><div id="qh-detect-fill" class="qh-detect-fill"></div></div>
+      </div>
       <div class="rt-body">
         <div class="rt-left">
           <div id="rt-output" class="rt-output"></div>
@@ -909,7 +927,10 @@
           <div class="rt-stat"><span>CONNECTED NODE</span><span id="rt-node">NONE</span></div>
           <div class="rt-stat"><span>ACTIVE HACKS</span><span id="rt-hacks">NONE</span></div>
           <div class="rt-stat"><span>RAM/CPU</span><span id="rt-ram-cpu">RAM 0% | CPU 0%</span></div>
+          <div class="rt-stat"><span>HEAT</span><span id="rt-heat-state">NORMAL</span></div>
+          <div class="rt-heat-bar"><div id="rt-heat-fill" class="rt-heat-fill"></div></div>
           <div class="rt-stat"><span>NETWORK</span><span id="rt-network">DORMANT</span></div>
+          <div class="rt-stat"><span>AUTH SHARDS</span><span id="rt-auth">0/0</span></div>
           <div class="rt-stat"><span>INTRUSION RISK</span><span id="rt-risk">0%</span></div>
           <div class="rt-stat"><span>PENDING</span><span id="rt-pending">IDLE</span></div>
         </div>

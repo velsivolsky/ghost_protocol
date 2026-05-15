@@ -111,8 +111,13 @@ export function bindUI() {
 		terminalActiveHacks: document.getElementById('rt-hacks'),
 		terminalRamCpu: document.getElementById('rt-ram-cpu'),
 		terminalNetworkStatus: document.getElementById('rt-network'),
+		terminalAuthShards: document.getElementById('rt-auth'),
 		terminalRisk: document.getElementById('rt-risk'),
 		terminalPending: document.getElementById('rt-pending'),
+		terminalHeatState: document.getElementById('rt-heat-state'),
+		terminalHeatFill: document.getElementById('rt-heat-fill'),
+		detectPanel: document.getElementById('qh-detect-panel'),
+		detectTimerFill: document.getElementById('qh-detect-fill'),
 	};
 
 	G.canvas = G.dom.canvas;
@@ -290,7 +295,14 @@ export function rebuildList() {
 			continue;
 		}
 
-		const state = device.dead
+		const now = performance.now();
+		const state = device.type === 'distract'
+			? device.active
+				? 'ACTIVE'
+				: now < (device.cooldownUntil || 0)
+					? 'COOLDOWN'
+					: 'READY'
+			: device.dead
 			? 'DEAD'
 			: device.type === 'tech'
 				? 'REPAIR'

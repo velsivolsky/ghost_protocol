@@ -51,17 +51,25 @@ export function tickTraceSystem(dt) {
   const connected = !!G.terminalRuntime.connectedTargetId;
   const maskActive = now < (G.traceRuntime.maskUntil || 0);
   const ghostActive = now < (G.traceRuntime.ghostUntil || 0);
+  const heat = Math.max(0, G.terminalRuntime.heat || 0);
+  const heatPressure = heat > 0 ? Math.min(2.2, 1 + heat / 65) : 1;
 
   if (connected) {
     const passivePerSec = ghostActive ? 0.6 : G.traceRuntime.passivePerSec;
-    addTrace((dt / 1000) * passivePerSec, 'link');
+    addTrace((dt / 1000) * passivePerSec * heatPressure, 'link');
+  }
+
+  if (heat >= 60) {
+    addTrace((dt / 1000) * ((heat - 58) * 0.08) * heatPressure, 'heat');
   }
 
   const decayBase = (dt / 1000) * G.traceRuntime.decayPerSec;
-  const decay = maskActive ? decayBase * 2.3 : decayBase;
+  const decayHeatPenalty = heat >= 70 ? Math.min(0.65, (heat - 65) * 0.01) : 0;
+  const decay = maskActive ? decayBase * 2.3 : decayBase * (1 - decayHeatPenalty);
   softenTrace(decay);
 
-  G.traceRuntime.velocity *= 0.92;
+  G.traceRuntime.velocity *= heat >= 70 ? 0.965 : 0.92;
+  G.traceRuntime.velocity = Math.max(G.traceRuntime.velocity || 0, heat * 0.03);
   const value = G.traceRuntime.value || 0;
   let tier = 0;
 

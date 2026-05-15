@@ -77,11 +77,15 @@ export function tickTutorial(force = false) {
 			advanced = advanceTutorialStep(2);
 		}
 	} else if (step === 2) {
-		if (G.tutorial.lastCommandId === 'tutorial' || (G.tutorial.lastCommandId === 'help' && G.tutorial.lastCommandTopic === 'basics')) {
+		if (G.tutorial.lastCommandId === 'scan_local' || G.tutorial.lastCommandId === 'scan_network') {
+			advanced = advanceTutorialStep(4);
+		} else if (G.tutorial.lastCommandId === 'connect' && G.terminalRuntime?.connectedTargetId) {
+			advanced = advanceTutorialStep(4);
+		} else if (G.tutorial.lastCommandId === 'tutorial' || (G.tutorial.lastCommandId === 'help' && G.tutorial.lastCommandTopic === 'basics')) {
 			advanced = advanceTutorialStep(3);
 		}
 	} else if (step === 3) {
-		if (G.tutorial.lastCommandId === 'scan_local' || G.tutorial.lastCommandId === 'scan_network') {
+		if (G.tutorial.lastCommandId === 'scan_local' || G.tutorial.lastCommandId === 'scan_network' || G.tutorial.lastCommandId === 'connect') {
 			advanced = advanceTutorialStep(4);
 		}
 	} else if (step === 4) {
@@ -107,7 +111,7 @@ export function tickTutorial(force = false) {
 			advanced = advanceTutorialStep(8);
 		}
 	} else if (step === 8) {
-		if (G.tutorial.lastCommandId === 'download_map' && isConnectedToType('sterm')) {
+		if ((G.tutorial.lastCommandId === 'breach_firewall' || G.tutorial.lastCommandId === 'dump_creds') && isConnectedToType('sterm')) {
 			advanced = advanceTutorialStep(9);
 		}
 	} else if (step === 9) {
@@ -116,13 +120,20 @@ export function tickTutorial(force = false) {
 		}
 	} else if (step === 10) {
 		if (
-			(G.tutorial.lastCommandId === 'inject' || G.tutorial.lastCommandId === 'deploy' || G.tutorial.lastCommandId === 'reroute') &&
+			(G.tutorial.lastCommandId === 'unlock' || G.tutorial.lastCommandId === 'inject' || G.tutorial.lastCommandId === 'deploy' || G.tutorial.lastCommandId === 'reroute') &&
 			isConnectedToType('mainterm')
 		) {
 			advanced = advanceTutorialStep(11);
 		}
 	} else if (step === 11) {
-		if (G.tutorial.lastCommandId === 'help' && ['guards', 'technicians', 'terminals', 'mainterm'].includes(G.tutorial.lastCommandTopic)) {
+		if (
+			['trigger_vent', 'vent_off', 'cut_lights', 'trip_panel'].includes(G.tutorial.lastCommandId) &&
+			isConnectedToType('distract')
+		) {
+			advanced = advanceTutorialStep(12);
+		}
+	} else if (step === 12) {
+		if (G.tutorial.lastCommandId === 'help' && ['guards', 'technicians', 'terminals', 'mainterm', 'distraction'].includes(G.tutorial.lastCommandTopic)) {
 			advanced = completeTutorial();
 		}
 	}
@@ -148,7 +159,7 @@ export function updateTutorialPanel() {
 
 	const content = getTutorialStepContent(G.tutorial.step);
 	if (G.dom.tutorialStep) {
-		G.dom.tutorialStep.textContent = `STEP ${G.tutorial.step + 1}/12`;
+		G.dom.tutorialStep.textContent = `STEP ${G.tutorial.step + 1}/13`;
 	}
 	if (G.dom.tutorialTitle) {
 		G.dom.tutorialTitle.textContent = content.title;
@@ -175,7 +186,7 @@ function advanceTutorialStep(nextStep) {
 function completeTutorial() {
 	G.tutorial.active = false;
 	G.tutorial.completed = true;
-	G.tutorial.step = 11;
+	G.tutorial.step = 12;
 	updateTutorialPanel();
 	log('Tutorial zakonczony. Mozesz zaczac normalny run.', 'ok');
 	return true;
@@ -217,7 +228,7 @@ function getTutorialStepContent(step) {
 		return {
 			title: 'SCAN',
 			body: 'Zrob scan local. Terminal pokaze cele w zasiegu i podpowie co mozna hakowac.',
-			hint: 'Szukaj panel_1, cam_0, door_0 i podobnych obiektow.',
+			hint: 'Szukaj panel_1, cam_0, door_1, vent_1, lights_1, junction_1, wallpanel_1 i podobnych obiektow.',
 			log: 'Tutorial: skan wykonany.',
 		};
 	}
@@ -260,10 +271,10 @@ function getTutorialStepContent(step) {
 
 	if (step === 8) {
 		return {
-			title: 'SIDE TERMINAL // MAP',
-			body: 'Podlacz side terminal: connect node_side_1 i wpisz download map.',
-			hint: 'Komendy side terminala dzialaja tylko przy aktywnym polaczeniu do node_side_#.',
-			log: 'Tutorial: pobieranie mapy zaliczone.',
+			title: 'SIDE TERMINAL // FIREWALL',
+			body: 'Podlacz side terminal: connect node_side_1, potem breach firewall i dump creds.',
+			hint: 'Niektore terminale maja ICE. Najpierw lamiesz firewall, dopiero potem wyciagasz shard.',
+			log: 'Tutorial: firewall + auth shard zaliczone.',
 		};
 	}
 
@@ -279,16 +290,25 @@ function getTutorialStepContent(step) {
 	if (step === 10) {
 		return {
 			title: 'MAIN TERMINAL METHODS',
-			body: 'Polacz z main terminalem: connect node_main, potem inject relay albo deploy worm/reroute.',
-			hint: 'Main terminal daje strategiczny efekt na cala misje, nie tylko lokalny hack.',
+			body: 'Polacz z main terminalem: connect node_main, unlock elevator, potem inject relay albo deploy worm/reroute.',
+			hint: 'Po zebraniu shardow odblokowujesz dostep i przejscia miedzy pietrami.',
 			log: 'Tutorial: metody main terminala zaliczone.',
 		};
 	}
 
 	if (step === 11) {
 		return {
+			title: 'DISTRACTION NODES',
+			body: 'Podlacz node dystrakcji: connect vent_1/lights_1/junction_1/wallpanel_1 i odpal vent on/off, lights cut albo junction overload.',
+			hint: 'Komendy sa przypiete do typow. Nie uruchomisz wentylacji na swiatlach.',
+			log: 'Tutorial: dystrakcje terminalowe zaliczone.',
+		};
+	}
+
+	if (step === 12) {
+		return {
 			title: 'COMMAND ENCYCLOPEDIA',
-			body: 'Wpisz: help guards, help technicians, help terminals lub help mainterm.',
+			body: 'Wpisz: help guards, help technicians, help terminals, help mainterm lub help distraction.',
 			hint: 'W menu TERMINAL masz tez statyczna sciage komend i flow dla kazdego obiektu.',
 			log: 'Tutorial: komendy referencyjne zaliczone.',
 		};

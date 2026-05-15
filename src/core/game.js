@@ -4,6 +4,7 @@ import { generateMultiFloorMap, generateTutorialMap } from '../world/generator.j
 import { createCamera } from '../entities/camera.js';
 import { createGuard } from '../entities/guard.js';
 import { createDrone } from '../entities/drone.js';
+import { createDistraction } from '../entities/distraction.js';
 import { createTechnician } from '../entities/technician.js';
 import { closeCtx } from '../systems/hacking.js';
 import { bindInput } from '../systems/input.js';
@@ -401,7 +402,9 @@ function renderPlanMapAndList() {
 
   points.innerHTML = runs.map((run) => {
     const diff = getRunDifficulty(run);
-    return `<button class="plan-map-point ${diff}" data-runid="${run.id}" data-label="${run.typeName}" aria-label="${run.typeName}" style="left:${run.mapX}%;top:${run.mapY}%"></button>`;
+    const netName = getRunNetworkName(run);
+    const tooltip = `${run.typeName} (${netName})`;
+    return `<button class="plan-map-point ${diff}" data-runid="${run.id}" data-label="${tooltip}" aria-label="${tooltip}" style="left:${run.mapX}%;top:${run.mapY}%"></button>`;
   }).join('');
 
   const pointEls = Array.from(points.querySelectorAll('.plan-map-point'));
@@ -433,6 +436,13 @@ function renderPlanMapAndList() {
     setActive(planSelectedRunId);
     renderPlanRunDetail(planSelectedRunId);
   }
+}
+
+function getRunNetworkName(run) {
+  const source = String(run.id || run.typeName || 'run').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const trimmed = source.slice(0, 8) || 'RUN';
+  const hash = hashString(`${run.id}|${run.typeName}`);
+  return `OPS-${trimmed}-${(hash % 1000).toString().padStart(3, '0')}`;
 }
 
 function renderPlanRunDetail(runId) {
@@ -708,6 +718,13 @@ function startTutorialRun() {
   G.floors = [map];
   G.code = null;
   G.codeFound = false;
+  G.mainTerminalAuth = {
+    requiredShards: 0,
+    recoveredByNode: {},
+    unlocked: true,
+    passphrasePreview: null,
+  };
+  G.elevatorUnlocked = true;
   G.floor = 1;
   G.floorCount = 1;
   resetAudio();
@@ -724,8 +741,8 @@ function startTutorialRun() {
   rebuildList();
   closeCtx();
   log('Tryb treningowy online.', 'ok');
-  log('Wpisz tutorial lub help doors w live terminalu.', 'ok');
-  log('Na mapie masz drzwi, panele, kamery, drona, technika i terminale.', 'ok');
+  log('Wpisz tutorial lub help doors/help distraction w live terminalu.', 'ok');
+  log('Na mapie masz drzwi, panele, kamery, drona, technika, terminale i wezly dystrakcji.', 'ok');
   render();
 }
 
@@ -765,7 +782,13 @@ function createTutorialDevices(map) {
   tech.patrolB = { x: 10.5, y: 20.5 };
   tech.desc = 'Technik Treningowy';
 
-  return [cam, guard, drone, tech];
+  const distractionNodes = (map.distractionNodes || []).map((node, index) => {
+    const distract = createDistraction(index, node);
+    distract.desc = `${node.desc || 'Węzeł dystrakcji'} [Trening]`;
+    return distract;
+  });
+
+  return [cam, guard, drone, tech, ...distractionNodes];
 }
 
 export function boot() {
@@ -839,12 +862,23 @@ export function startRun(wave, credits) {
 
   const floors = generateMultiFloorMap(floorCount);
   const map = floors[0];
-  const devices = spawnEntities(map.rooms, wave);
+  const devices = spawnEntities(map, wave);
 
   initWaveState({ wave, credits, map, devices });
   G.floors = floors;
   G.code = floors.code || null;
   G.codeFound = false;
+  const requiredShards = floors.reduce((sum, floor) => {
+    const nodes = floor.sideTerminals || [];
+    return sum + nodes.filter((terminal) => !!terminal.authShard).length;
+  }, 0);
+  G.mainTerminalAuth = {
+    requiredShards,
+    recoveredByNode: {},
+    unlocked: requiredShards === 0,
+    passphrasePreview: null,
+  };
+  G.elevatorUnlocked = requiredShards === 0;
   G.floor = 1;
   G.floorCount = floorCount;
   resetAudio();

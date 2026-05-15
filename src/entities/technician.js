@@ -22,7 +22,10 @@ export function createTechnician(index, room) {
 		state: 'patrol',
 		repairTimer: 0,
 		repairDuration: 0,
+		inspectTimer: 0,
+		inspectDuration: 0,
 		spotCooldown: 0,
+		investigateTargetId: null,
 		dead: false,
 		desc: `Technik #${index + 1}`,
 		hackable: false,
@@ -95,6 +98,71 @@ export function tickTechnician(technician, dt) {
 		}
 
 		return;
+	}
+
+	if (technician.state === 'investigate') {
+		const distraction = byType('distract').find((device) => device.id === technician.investigateTargetId);
+
+		if (!distraction || !distraction.active) {
+			technician.state = 'return';
+			technician.investigateTargetId = null;
+			return;
+		}
+
+		moveToward(technician, distraction.x, distraction.y, dt, 1);
+		if (dst(technician, distraction) < 0.45) {
+			technician.state = 'inspect';
+			technician.inspectTimer = 0;
+			technician.inspectDuration = 1500 + Math.random() * 2300;
+			floatMsg('ANALYZE...', distraction, '#9de9dc');
+		}
+		return;
+	}
+
+	if (technician.state === 'inspect') {
+		const distraction = byType('distract').find((device) => device.id === technician.investigateTargetId);
+
+		if (!distraction) {
+			technician.state = 'return';
+			technician.investigateTargetId = null;
+			technician.inspectTimer = 0;
+			technician.inspectDuration = 0;
+			return;
+		}
+
+		moveToward(technician, distraction.x, distraction.y, dt, 0.18);
+		technician.inspectTimer += dt;
+
+		if (technician.inspectTimer >= technician.inspectDuration) {
+			technician.state = 'return';
+			technician.investigateTargetId = null;
+			technician.inspectTimer = 0;
+			technician.inspectDuration = 0;
+			distraction.active = false;
+			distraction.cooldownUntil = Math.max(distraction.cooldownUntil || 0, performance.now() + Math.max(2500, distraction.cooldownMs * 0.6));
+			floatMsg('CLEAR', distraction, '#c7d2ff');
+		}
+		return;
+	}
+
+	if (technician.state === 'patrol') {
+		const activeDistractors = byType('distract').filter((device) => {
+			if (!device.active) {
+				return false;
+			}
+			if (dst(technician, device) > 13.5) {
+				return false;
+			}
+			const cooldown = Number(device.cooldownUntil || 0);
+			return performance.now() >= cooldown;
+		});
+
+		if (activeDistractors.length) {
+			activeDistractors.sort((a, b) => dst(technician, a) - dst(technician, b));
+			technician.state = 'investigate';
+			technician.investigateTargetId = activeDistractors[0].id;
+			return;
+		}
 	}
 
 	const patrolTarget = technician.patrolIndex % 2 === 0 ? technician.patrolA : technician.patrolB;

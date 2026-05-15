@@ -310,18 +310,18 @@ function drawTiles(viewportW, viewportH) {
         const isUp = tile === TILE_TYPES.STAIR_UP;
         const pulse = 0.55 + 0.45 * Math.sin(G.tick * 0.05);
 
-        ctx.fillStyle = isUp ? '#0f1926' : '#1b1524';
+        ctx.fillStyle = isUp ? '#0d1c2a' : '#171a2c';
         ctx.fillRect(px, py, TILE, TILE);
 
-        ctx.strokeStyle = isUp ? '#7ac8ff' : '#ffd269';
+        ctx.strokeStyle = isUp ? '#7ac8ff' : '#c9a8ff';
         ctx.lineWidth = 1;
         ctx.strokeRect(px + 2, py + 2, TILE - 4, TILE - 4);
 
         ctx.fillStyle = isUp
           ? `rgba(122,200,255,${pulse})`
-          : `rgba(255,210,105,${pulse})`;
+          : `rgba(201,168,255,${pulse})`;
         ctx.font = '11px monospace';
-        ctx.fillText(isUp ? '△' : '▽', px + 4, py + 13);
+        ctx.fillText(isUp ? '⇧' : '⇩', px + 4, py + 13);
       }
 
       if (!visible) {
@@ -527,6 +527,7 @@ function getHighlightColor(type) {
   if (type === 'guard') return '#ffd700';
   if (type === 'drone') return '#54c6ff';
   if (type === 'tech') return '#c7d2ff';
+  if (type === 'distract') return '#00ff9f';
   if (type === 'mainterm' || type === 'sterm') return '#00ff9f';
   return '#7ac8ff';
 }
@@ -649,6 +650,23 @@ function drawDevice(device, px, py) {
   }
 
   if (device.type === 'mainterm' || device.type === 'sterm') {
+    return;
+  }
+
+  if (device.type === 'distract') {
+    const now = performance.now();
+    const cooling = now < (device.cooldownUntil || 0) && !device.active;
+    const color = device.active ? '#00ff9f' : cooling ? '#ffd166' : '#7ac8ff';
+    const bg = device.active ? '#002118' : cooling ? '#211707' : '#0b1320';
+
+    ctx.fillStyle = bg;
+    ctx.fillRect(px + 4, py + 4, TILE - 8, TILE - 8);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px + 4, py + 4, TILE - 8, TILE - 8);
+    ctx.fillStyle = color;
+    ctx.font = '10px monospace';
+    ctx.fillText(device.active ? '✶' : '◈', px + 6, py + 13);
     return;
   }
 

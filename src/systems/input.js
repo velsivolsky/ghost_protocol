@@ -96,7 +96,8 @@ function handleCanvasHover(event) {
     }
 
     if (Math.abs(device.x - worldX) < 0.8 && Math.abs(device.y - worldY) < 0.8) {
-      G.hoverInfo = { label: device.desc || getDeviceLabel(device.type), type: device.type };
+      const base = device.desc || getDeviceLabel(device.type);
+      G.hoverInfo = { label: withNetworkName(base, device.networkName || device.id || device.type), type: device.type };
       return;
     }
   }
@@ -108,25 +109,35 @@ function handleCanvasHover(event) {
 
   for (const terminal of G.sideTerminals) {
     if (terminal.x === tileX && terminal.y === tileY) {
-      G.hoverInfo = { label: terminal.desc || 'Terminal poboczny', type: 'sterm' };
+      G.hoverInfo = {
+        label: withNetworkName(terminal.desc || 'Terminal poboczny', terminal.networkName || terminal.id || 'node_side'),
+        type: 'sterm',
+      };
       return;
     }
   }
 
   for (const panel of G.wallTerminals) {
     if (panel.x === tileX && panel.y === tileY) {
-      G.hoverInfo = { label: panel.desc || 'Panel drzwi', type: 'wterm' };
+      G.hoverInfo = {
+        label: withNetworkName(panel.desc || 'Panel drzwi', panel.networkName || panel.id || 'panel'),
+        type: 'wterm',
+      };
       return;
     }
   }
 
   if (tile === TILE_TYPES.MAIN_TERMINAL) {
-    G.hoverInfo = { label: 'Terminal glowny', type: 'mainterm' };
+    G.hoverInfo = {
+      label: withNetworkName('Terminal glowny', G.mainTerminal?.networkName || G.mainTerminal?.id || 'node_main'),
+      type: 'mainterm',
+    };
     return;
   }
 
   if (tile === TILE_TYPES.DOOR_CLOSED || tile === TILE_TYPES.DOOR_OPEN) {
-    G.hoverInfo = { label: 'Drzwi', type: 'door' };
+    const door = G.doors.find((item) => item.x === tileX && item.y === tileY);
+    G.hoverInfo = { label: withNetworkName('Drzwi', door?.id || 'door'), type: 'door' };
     return;
   }
 
@@ -136,12 +147,12 @@ function handleCanvasHover(event) {
   }
 
   if (tile === TILE_TYPES.STAIR_UP) {
-    G.hoverInfo = { label: 'Schody w gore', type: 'stair-up' };
+    G.hoverInfo = { label: 'Winda (up-link)', type: 'stair-up' };
     return;
   }
 
   if (tile === TILE_TYPES.STAIR_DOWN) {
-    G.hoverInfo = { label: 'Schody w dol', type: 'stair-down' };
+    G.hoverInfo = { label: 'Winda (down-link)', type: 'stair-down' };
     return;
   }
 
@@ -153,5 +164,14 @@ function getDeviceLabel(type) {
   if (type === 'guard') return 'Straznik';
   if (type === 'drone') return 'Dron';
   if (type === 'tech') return 'Technik';
+  if (type === 'distract') return 'Wezel dystrakcji';
   return 'Obiekt';
+}
+
+function withNetworkName(label, networkName) {
+  const base = String(label || '').trim();
+  const net = String(networkName || '').trim();
+  if (!base) return net;
+  if (!net) return base;
+  return `${base} (${net})`;
 }
