@@ -15,6 +15,7 @@ function createTerminalRuntimeState() {
     connectedTargetType: null,
     connectedTargetLabel: 'NONE',
     pendingCommand: null,
+    scriptQueue: [],
     activeHacks: [],
     commandCooldownMs: 0,
     systemLogTickMs: 0,
@@ -29,6 +30,8 @@ function createTerminalRuntimeState() {
     overheatMode: false,
     crashUntil: 0,
     lastHeatSource: 'none',
+    mainPayloadUploaded: false,
+    mainHackLogStep: -1,
   };
 }
 

@@ -393,16 +393,12 @@ export function initNetworkBreachBridge() {
 		});
 	}
 
-	if (G.dom.nbEnemies) {
-		G.dom.nbEnemies.addEventListener('click', onEnemyClick);
-	}
-
 	// Mouse hover highlighting for actions
 	if (G.dom.nbActions) {
 		G.dom.nbActions.addEventListener('mouseover', (e) => {
-			const button = e.target.closest('button[data-nb-action]');
-			if (button && state) {
-				highlightAction(button.dataset.nbAction);
+			const commandRow = e.target.closest('[data-nb-action]');
+			if (commandRow && state) {
+				highlightAction(commandRow.dataset.nbAction);
 			}
 		});
 		G.dom.nbActions.addEventListener('mouseout', () => {
@@ -439,24 +435,11 @@ export function resetNetworkBreachState() {
 }
 
 function onActionClick(event) {
-	const button = event.target.closest('button[data-nb-action]');
-	if (!button || !G.breachActive || !state || state.finished) {
+	const commandRow = event.target.closest('[data-nb-action]');
+	if (!commandRow || !G.breachActive || !state || state.finished || commandRow.classList.contains('disabled')) {
 		return;
 	}
-	runPlayerTurn(button.dataset.nbAction);
-}
-
-function onEnemyClick(event) {
-	const card = event.target.closest('[data-enemy-id]');
-	if (!card || !state || state.finished) {
-		return;
-	}
-	const target = state.enemies.find((enemy) => enemy.id === card.dataset.enemyId && !enemy.dead);
-	if (!target) {
-		return;
-	}
-	state.selectedEnemyId = target.id;
-	renderEnemies();
+	runPlayerTurn(commandRow.dataset.nbAction);
 }
 
 export function launchNetworkBreach() {
@@ -1078,55 +1061,49 @@ function renderAll() {
 	renderWarning();
 }
 
+function asciiBar(value, max, width = 10) {
+	const filled = Math.round((value / max) * width);
+	const empty = width - filled;
+	return '[' + '█'.repeat(Math.max(0, filled)) + '░'.repeat(Math.max(0, empty)) + ']';
+}
+
 function renderStats() {
 	if (!G.dom.nbStats) {
 		return;
 	}
 
 	const player = state.player;
-	const statusBits = [];
+	const flags = [];
 
-	if (player.tracked > 0) {
-		statusBits.push(`<span class="nb-badge tracked" title="TRACKED: dodatkowy wzrost TRACE.">TRACKED:${player.tracked}</span>`);
-	}
+	if (player.tracked > 0) flags.push(`<span class="nb-flag warn">TRACKED:${player.tracked}</span>`);
+	if (player.encrypted > 0) flags.push(`<span class="nb-flag warn">ENCRYPTED:${player.encrypted}</span>`);
+	if (player.cloak > 0) flags.push(`<span class="nb-flag ok">CLOAK:${player.cloak}</span>`);
+	if (player.jammerT > 0) flags.push(`<span class="nb-flag ok">JAMMER:${player.jammerT}</span>`);
+	if (player.sandboxT > 0) flags.push(`<span class="nb-flag ok">SANDBOX:${player.sandboxT}</span>`);
+	if (player.cacheDebtT > 0) flags.push(`<span class="nb-flag warn">DEBT:${player.cacheDebtT}</span>`);
+	if (player.exposed > 0) flags.push(`<span class="nb-flag crit">EXPOSED:${player.exposed}</span>`);
 
-	if (player.encrypted > 0) {
-		statusBits.push(`<span class="nb-badge encrypted" title="ENCRYPTED: koszty rosna.">ENCRYPTED:${player.encrypted}</span>`);
-	}
+	const traceClass = player.trace >= 85 ? 'crit' : player.trace >= 65 ? 'warn' : 'ok';
+	const coreLabel = state.corePhase === 'vulnerable' ? 'VULNERABLE' : state.corePhase === 'destabilized' ? 'DESTABILIZED' : 'STABLE';
+	const coreClass = state.corePhase === 'vulnerable' ? 'crit' : state.corePhase === 'destabilized' ? 'warn' : 'ok';
 
-	if (player.cloak > 0) {
-		statusBits.push(`<span class="nb-badge cloak" title="CLOAK: redukuje TRACE.">CLOAK:${player.cloak}</span>`);
-	}
+	const cpuBar = asciiBar(Math.round(player.cpu), player.maxCpu);
+	const ramBar = asciiBar(Math.round(player.ram), player.maxRam);
+	const traceBar = asciiBar(Math.round(player.trace), 100);
 
-	if (player.jammerT > 0) {
-		statusBits.push(`<span class="nb-badge ok" title="PACKET JAMMER: blok TRACKED.">JAMMER:${player.jammerT}</span>`);
-	}
-
-	if (player.sandboxT > 0) {
-		statusBits.push(`<span class="nb-badge ok" title="SANDBOX: tlumi BLACK ICE.">SANDBOX:${player.sandboxT}</span>`);
-	}
-
-	if (player.cacheDebtT > 0) {
-		statusBits.push(`<span class="nb-badge tracked" title="CACHE DEBT: opozniony TRACE.">DEBT:${player.cacheDebtT}</span>`);
-	}
-
-	if (player.exposed > 0) {
-		statusBits.push(`<span class="nb-badge exposed" title="EXPOSED: bierzsz wiecej damage.">EXPOSED:${player.exposed}</span>`);
-	}
-
-	const traceClass = player.trace >= 85 ? 'critical' : player.trace >= 65 ? 'high' : '';
-	const stat = (label, value) => `<div class="nb-stat"><div class="k">${label}</div><div class="v">${value}</div></div>`;
-
-	const corePhaseIndicator = state.corePhase === 'vulnerable' ? ' [VULNERABLE]' : state.corePhase === 'destabilized' ? ' [DESTABILIZED]' : '';
-
-	G.dom.nbStats.innerHTML = [
-		stat('TURA', state.turn),
-		stat('CPU', `${Math.round(player.cpu)}/${player.maxCpu}`),
-		stat('RAM', `${Math.round(player.ram)}/${player.maxRam}`),
-		`<div class="nb-stat trace ${traceClass}"><div class="k">TRACE</div><div class="v">${Math.round(player.trace)}%</div><div class="trace-bar"><div class="fill" style="width:${Math.max(0, Math.min(100, player.trace))}%"></div></div></div>`,
-		stat('RDZEN', `${Math.round(state.core)}%${corePhaseIndicator}`),
-		`<div class="nb-stat status"><div class="k">STATUS</div><div class="v status-wrap">${statusBits.length ? statusBits.join('') : '<span class="nb-badge ok">STABLE</span>'}</div></div>`,
-	].join('');
+	G.dom.nbStats.innerHTML = `
+		<div class="nb-sysline">
+			<span class="nb-sl-label">T</span><span class="nb-sl-val">${String(state.turn).padStart(2, '0')}</span>
+			<span class="nb-sl-sep">│</span>
+			<span class="nb-sl-label">cpu</span><span class="nb-sl-bar">${cpuBar}</span><span class="nb-sl-val">${Math.round(player.cpu)}/${player.maxCpu}</span>
+			<span class="nb-sl-sep">│</span>
+			<span class="nb-sl-label">ram</span><span class="nb-sl-bar">${ramBar}</span><span class="nb-sl-val">${Math.round(player.ram)}/${player.maxRam}</span>
+			<span class="nb-sl-sep">│</span>
+			<span class="nb-sl-label">trace</span><span class="nb-sl-bar ${traceClass}">${traceBar}</span><span class="nb-sl-val ${traceClass}">${Math.round(player.trace)}%</span>
+			<span class="nb-sl-sep">│</span>
+			<span class="nb-sl-label">node</span><span class="nb-sl-val ${coreClass}">${Math.round(state.core)}% [${coreLabel}]</span>
+			${flags.length ? `<span class="nb-sl-sep">│</span><span class="nb-sl-flags">${flags.join('')}</span>` : ''}
+		</div>`;
 }
 
 function renderActions() {
@@ -1137,27 +1114,61 @@ function renderActions() {
 	G.dom.nbActions.innerHTML = getEquippedBreachActions()
 		.map((action) => {
 			const costs = getCosts(action);
-			const disabled = state.finished || !canPay(costs.cpu, costs.ram) ? 'disabled' : '';
+			const disabled = state.finished || !canPay(costs.cpu, costs.ram);
 			const traceLabel = `${action.trace >= 0 ? '+' : ''}${action.trace}`;
-			return `<button data-nb-action="${action.id}" ${disabled} title="${action.tip}"><span class="n">${action.name}</span><span class="c">CPU:${costs.cpu} RAM:${costs.ram} TRACE:${traceLabel}</span><span class="d">${action.desc}</span></button>`;
+			const cliName = action.name.toLowerCase().replace(/\s+/g, '_');
+			const stateLabel = disabled ? 'blocked' : 'ready';
+			return `<div class="nb-cmd-row ${disabled ? 'disabled' : ''}" data-nb-action="${action.id}" title="${action.tip}"><span class="n">cmd&gt; ${cliName}</span><span class="c">cpu=${costs.cpu} ram=${costs.ram} trace=${traceLabel} state=${stateLabel}</span><span class="d">${action.desc}</span></div>`;
 		})
 		.join('');
 }
+
+const PROCESS_NAMES = {
+	firewall: 'firewall.sys',
+	daemon: 'trace_daemon.exe',
+	sentinel: 'ice_sentinel.ko',
+	blackice: 'blackice_x.bin',
+};
+
+const PROCESS_PIDS = {
+	firewall: 'fw01',
+	daemon: 'dm02',
+	sentinel: 'sn03',
+	blackice: 'bi04',
+};
 
 function renderEnemies() {
 	if (!G.dom.nbEnemies) {
 		return;
 	}
 
-	G.dom.nbEnemies.innerHTML = state.enemies
-		.map((enemy) => {
-			const selected = state.selectedEnemyId === enemy.id && !enemy.dead ? 'selected' : '';
-			const cls = enemy.dead ? 'dead' : '';
-			const title = `${enemy.role}. ${enemy.desc}`;
-			const intent = computeIntentForEnemy(enemy);
-			return `<div class="nb-enemy ${cls} ${selected}" data-enemy-id="${enemy.id}" title="${title}"><div class="name">${enemy.name}</div><div class="intent">[Next: ${intent}]</div><div class="meta">HP:${Math.round(enemy.hp)}/${enemy.maxHp} | ARM:${enemy.armor} | INF:${enemy.infected} | STUN:${enemy.stunned}</div><div class="role">${enemy.role}</div></div>`;
-		})
-		.join('');
+	const header = `<div class="nb-proc-header"><span class="nb-ph pid">PID</span><span class="nb-ph proc">PROCESS</span><span class="nb-ph integ">INTEGRITY</span><span class="nb-ph next">NEXT_OP</span><span class="nb-ph flags">FLAGS</span></div>`;
+
+	const rows = state.enemies.map((enemy) => {
+		const deadCls = enemy.dead ? 'dead' : '';
+		const pid = PROCESS_PIDS[enemy.type] || '??00';
+		const procName = PROCESS_NAMES[enemy.type] || `${enemy.type}.bin`;
+		const integrityPct = Math.round((enemy.hp / enemy.maxHp) * 100);
+		const intBar = asciiBar(Math.max(0, enemy.hp), enemy.maxHp, 8);
+		const intClass = integrityPct <= 25 ? 'crit' : integrityPct <= 55 ? 'warn' : 'ok';
+		const intent = computeIntentForEnemy(enemy);
+		const flags = [];
+		if (enemy.armor > 0) flags.push(`arm:${enemy.armor}`);
+		if (enemy.infected > 0) flags.push(`inf:${enemy.infected}`);
+		if (enemy.stunned > 0) flags.push(`stun:${enemy.stunned}`);
+		if (enemy.suppressedNextTurn) flags.push(`supr`);
+		const flagStr = flags.length ? flags.join(' ') : '—';
+
+		return `<div class="nb-proc-row ${deadCls}" title="${enemy.role}. ${enemy.desc}">
+			<span class="nb-ph pid">${pid}</span>
+			<span class="nb-ph proc">${deadCls ? '<s>' : ''}${procName}${deadCls ? '</s>' : ''}</span>
+			<span class="nb-ph integ"><span class="${intClass}">${intBar}</span> <span class="${intClass}">${Math.max(0, Math.round(enemy.hp))}/${enemy.maxHp}</span></span>
+			<span class="nb-ph next">${enemy.dead ? '[terminated]' : intent}</span>
+			<span class="nb-ph flags">${flagStr}</span>
+		</div>`;
+	}).join('');
+
+	G.dom.nbEnemies.innerHTML = header + rows;
 }
 
 function renderWarning() {
@@ -1169,18 +1180,18 @@ function renderWarning() {
 
 	if (trace >= 90) {
 		G.dom.nbWarning.className = 'nb-warning show danger pulse';
-		G.dom.nbWarning.textContent = 'CRITICAL: TRACE bardzo wysoki. Priorytet: SPOOF lub szybkie zakonczenie.';
+		G.dom.nbWarning.textContent = '!! DETECTION IMMINENT — trace spike critical. execute $ przejmij_rdzen or abort.';
 		return;
 	}
 
 	if (trace >= 70) {
 		G.dom.nbWarning.className = 'nb-warning show warn';
-		G.dom.nbWarning.textContent = 'WARNING: TRACE rosnacy. Rozwaz SPOOF albo eliminacje TRACE DAEMON.';
+		G.dom.nbWarning.textContent = '>> trace escalating. suppress trace_daemon.exe or reduce aggression.';
 		return;
 	}
 
 	G.dom.nbWarning.className = 'nb-warning show ok';
-	G.dom.nbWarning.textContent = 'TRACE stabilny. Buduj tempo lub pozostaj w stealth dla natural decay.';
+	G.dom.nbWarning.textContent = '>> trace nominal. maintain stealth or increase exploit pressure.';
 }
 
 function renderHelp() {
@@ -1189,18 +1200,16 @@ function renderHelp() {
 	}
 
 	const levels = getHackLevels();
-	const levelInfo = `
-		CRACK:${levels.crack} | SUPPRESS:${levels.suppress} | WORM:${levels.worm} | OVERLOAD:${levels.overload} | CORE:${levels.core}
-	`.trim();
+	const levelInfo = `crack:${levels.crack} | suppress:${levels.suppress} | worm:${levels.worm} | overload:${levels.overload} | core:${levels.core}`;
 
 	G.dom.nbHelp.innerHTML = [
-		'<div class="h-title">SYSTEM GUIDE</div>',
-		`<div class="h-row"><span style="color:#ffb366">HACK LEVELS</span><span style="font-size:10px">${levelInfo}</span></div>`,
-		'<div class="h-row"><span>TRACE</span><span>Przegrywasz przy 100%. Rosnie z agresji. Spada naturalnie gdy nie atakujesz.</span></div>',
-		'<div class="h-row"><span>CPU/RAM</span><span>+18 CPU, +14 RAM co ture. ENCRYPTED zwieksza koszty akcji.</span></div>',
-		'<div class="h-row"><span>SUPPRESS</span><span>Tłumi TRACE DAEMON (lekka akcja). Zmniejsza jego TRACE gain o 70%!</span></div>',
-		'<div class="h-row"><span>Synergies</span><span>SUPPRESS -> CRACK (crit), WORM -> OVERLOAD (bonus inf).</span></div>',
-		'<div class="h-row"><span>Fazy rdzenia</span><span>Stable -> Destabilized (CORE atak) -> Vulnerable (2-3 ataki, przejecie).</span></div>',
+		'<div class="h-title">> exploit_env --info</div>',
+		`<div class="h-row"><span>exploit_lvl</span><span style="font-size:10px">${levelInfo}</span></div>`,
+		'<div class="h-row"><span>trace</span><span>session killed at 100%. grows with aggression. passive decay each idle turn.</span></div>',
+		'<div class="h-row"><span>cpu/ram</span><span>+18 cpu, +14 ram per cycle. encrypted flag inflates all exploit costs.</span></div>',
+		'<div class="h-row"><span>$ suppress</span><span>light action — chains with next command. silences trace_daemon.exe trace gain -70%.</span></div>',
+		'<div class="h-row"><span>chain ops</span><span>suppress → crack (crit shot),  worm → overload (inf bonus).</span></div>',
+		'<div class="h-row"><span>node state</span><span>stable → destabilized → vulnerable → $ przejmij_rdzen to exfil.</span></div>',
 	].join('');
 }
 

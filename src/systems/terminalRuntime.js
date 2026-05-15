@@ -2,6 +2,7 @@ import { HACK_RANGE, TILE_TYPES } from '../core/constants.js';
 import { G, byType } from '../core/state.js';
 import { clamp, dst } from '../utils/math.js';
 import { log, rebuildList, refreshHUD } from './ui.js';
+import { updateMissionText } from './mission.js';
 import { autocompleteTerminalCommand, parseTerminalCommand } from './terminalParser.js';
 import { getCommandDef, COMMAND_REGISTRY } from './terminalCommands.js';
 import { addTrace, activateGhostWindow, activateTraceMask, softenTrace } from './traceSystem.js';
@@ -24,11 +25,18 @@ const COMMAND_HEAT_COSTS = {
   breach_firewall: 30,
   transfer_credits: 10,
   inject: 14,
+  scp: 10,
+  source: 16,
+  feed_blind: 9,
+  feed_loop: 5,
   breach: 16,
   deploy: 14,
   override: 16,
   set_friendly: 12,
   unlock: 8,
+  elevator_unlock: 8,
+  elevator_up: 0,
+  elevator_down: 0,
   reroute: 10,
   disable: 14,
   spoof: 4,
@@ -82,6 +90,7 @@ export function resetTerminalRuntime() {
   G.terminalRuntime.connectedTargetType = null;
   G.terminalRuntime.connectedTargetLabel = 'NONE';
   G.terminalRuntime.pendingCommand = null;
+  G.terminalRuntime.scriptQueue = [];
   G.terminalRuntime.activeHacks = [];
   G.terminalRuntime.commandCooldownMs = 0;
   G.terminalRuntime.systemLogTickMs = 0;
@@ -102,6 +111,7 @@ export function resetTerminalRuntime() {
   G.terminalRuntime.outputRevision = 0;
   G.terminalRuntime.tutorialShown = false;
   G.terminalRuntime.scanHighlights = [];
+  G.terminalRuntime.mainPayloadUploaded = false;
   G.traceRuntime.value = 0;
   G.traceRuntime.velocity = 0;
   G.traceRuntime.tier = 0;
@@ -188,6 +198,15 @@ export function executeTerminalInput() {
   G.terminalRuntime.history = G.terminalRuntime.history.slice(0, 40);
   G.terminalRuntime.historyCursor = -1;
 
+  const inlineChain = parseConnectInlineChain(raw);
+  if (inlineChain) {
+    queueTerminalScript(inlineChain);
+    G.dom.terminalInput.value = '';
+    G.terminalRuntime.inputBuffer = '';
+    syncTerminalHints();
+    return;
+  }
+
   queueTerminalCommand(raw);
   G.dom.terminalInput.value = '';
   G.terminalRuntime.inputBuffer = '';
@@ -224,7 +243,70 @@ export function tickTerminalRuntime(dt) {
     }
   }
 
+  if (!G.terminalRuntime.pendingCommand && G.terminalRuntime.commandCooldownMs <= 0) {
+    tickTerminalScriptQueue();
+  }
+
   syncTerminalOverlay();
+}
+
+function tickTerminalScriptQueue() {
+  const queue = G.terminalRuntime?.scriptQueue;
+  if (!queue?.length) {
+    return;
+  }
+
+  const next = queue.shift();
+  if (!next) {
+    return;
+  }
+
+  queueTerminalCommand(next);
+}
+
+function queueTerminalScript(commands) {
+  if (!G.terminalRuntime) {
+    return;
+  }
+
+  if (!commands.length) {
+    return;
+  }
+
+  G.terminalRuntime.scriptQueue = [
+    ...(G.terminalRuntime.scriptQueue || []),
+    ...commands,
+  ];
+
+  pushTerminalLine(`script queued (${commands.length}): ${commands.join('  ->  ')}`, 'sys');
+}
+
+export function noteMainHackChannelProgress(progressValue) {
+  if (!G.terminalRuntime) {
+    return;
+  }
+
+  const steps = [
+    'breach.sh: init socket',
+    'breach.sh: key exchange',
+    'breach.sh: watchdog bypass',
+    'breach.sh: memory patch',
+    'breach.sh: trace dampening',
+    'breach.sh: privilege escalation',
+    'breach.sh: breach layer arm',
+    'breach.sh: handoff -> breach sequence',
+  ];
+
+  const normalized = Math.max(0, Math.min(100, Number(progressValue || 0)));
+  const step = Math.min(steps.length - 1, Math.floor((normalized / 100) * steps.length));
+  if (step <= (G.terminalRuntime.mainHackLogStep || -1)) {
+    return;
+  }
+
+  for (let i = (G.terminalRuntime.mainHackLogStep || -1) + 1; i <= step; i += 1) {
+    pushTerminalLine(`[mainlink] ${steps[i]}`, i === steps.length - 1 ? 'ok' : 'sys', true);
+  }
+  G.terminalRuntime.mainHackLogStep = step;
 }
 
 export function syncTerminalOverlay() {
@@ -243,6 +325,9 @@ export function syncTerminalOverlay() {
   }
   if (G.dom.terminalConnectedNode) {
     G.dom.terminalConnectedNode.textContent = runtime.connectedTargetLabel || 'NONE';
+  }
+  if (G.dom.terminalPrompt) {
+    G.dom.terminalPrompt.textContent = getTerminalPrompt();
   }
   if (G.dom.terminalActiveHacks) {
     const list = runtime.activeHacks.map((hack) => `${hack.label}:${Math.ceil(hack.timeLeftMs / 1000)}s`);
@@ -441,6 +526,26 @@ function resolveCommandExecution(pending) {
     return;
   }
 
+  if (commandId === 'scp') {
+    runScp(args, target);
+    return;
+  }
+
+  if (commandId === 'source') {
+    runSource(args, target);
+    return;
+  }
+
+  if (commandId === 'feed_blind') {
+    runFeedBlind(target);
+    return;
+  }
+
+  if (commandId === 'feed_loop') {
+    runFeedLoop(target);
+    return;
+  }
+
   if (commandId === 'breach') {
     runBreach(args);
     noteTutorialCommand('breach', args);
@@ -468,6 +573,22 @@ function resolveCommandExecution(pending) {
   if (commandId === 'unlock') {
     runUnlock(args, target);
     noteTutorialCommand('unlock', args);
+    return;
+  }
+
+  if (commandId === 'elevator_unlock') {
+    runElevatorUnlock(target);
+    noteTutorialCommand('unlock', ['elevator']);
+    return;
+  }
+
+  if (commandId === 'elevator_up') {
+    runElevatorMove('up');
+    return;
+  }
+
+  if (commandId === 'elevator_down') {
+    runElevatorMove('down');
     return;
   }
 
@@ -578,15 +699,22 @@ function runConnect(targetId) {
     return;
   }
 
+  if (found.type === 'cam' && found.dist > 3.5) {
+    pushTerminalLine(`camera uplink out of range (${found.dist.toFixed(1)}t > 3.5t)`, 'warn');
+    return;
+  }
+
   if (dst(found.anchor, G.P) > HACK_RANGE + 1.2) {
     pushTerminalLine(`out of range: ${targetId}`, 'warn');
     return;
   }
 
+  runClear();
   G.terminalRuntime.connectedTargetId = found.id;
   G.terminalRuntime.connectedTargetType = found.type;
   G.terminalRuntime.connectedTargetLabel = found.label;
   pushTerminalLine(`uplink established -> ${found.id} [${found.type}]`, 'ok');
+  pushConnectedCommandHint(found);
 
   if (found.type === 'mainterm' && !isMainTerminalAccessUnlocked()) {
     const progress = getMainAuthProgress();
@@ -598,8 +726,6 @@ function runConnect(targetId) {
     pushTerminalLine(`door control path detected. next command: unlock`, 'dim');
   } else if (found.type === 'door') {
     pushTerminalLine(`direct lock handle detected. next command: unlock`, 'dim');
-  } else if (found.type === 'distract') {
-    pushTerminalLine('distraction node ready. commands: vent on | vent off | lights cut | junction overload', 'dim');
   }
 
   addTrace(1.5, 'connect');
@@ -615,6 +741,7 @@ function runDisconnect() {
   G.terminalRuntime.connectedTargetId = null;
   G.terminalRuntime.connectedTargetType = null;
   G.terminalRuntime.connectedTargetLabel = 'NONE';
+  G.terminalRuntime.mainPayloadUploaded = false;
 }
 
 function runScanLocal() {
@@ -627,7 +754,14 @@ function runScanLocal() {
 
   pushTerminalLine(`scan local: ${local.length} node(s)`, 'sys');
   updateScanHighlights(local);
-  for (const item of local.slice(0, 10)) {
+  const primary = local.slice(0, 10);
+  for (const item of primary) {
+    pushTerminalLine(formatScanLine(item, true), getScanLineClass(item));
+  }
+
+  const seenIds = new Set(primary.map((item) => item.id));
+  const elevators = local.filter((item) => item.type === 'elevator' && !seenIds.has(item.id));
+  for (const item of elevators) {
     pushTerminalLine(formatScanLine(item, true), getScanLineClass(item));
   }
 
@@ -640,7 +774,14 @@ function runScanLocal() {
 function runScanNetwork() {
   const all = enumerateHackTargets(true);
   pushTerminalLine(`scan network: ${all.length} known node(s)`, 'sys');
-  for (const item of all.slice(0, 12)) {
+  const primary = all.slice(0, 12);
+  for (const item of primary) {
+    pushTerminalLine(formatScanLine(item, false), getScanLineClass(item));
+  }
+
+  const seenIds = new Set(primary.map((item) => item.id));
+  const elevators = all.filter((item) => item.type === 'elevator' && !seenIds.has(item.id));
+  for (const item of elevators) {
     pushTerminalLine(formatScanLine(item, false), getScanLineClass(item));
   }
 }
@@ -837,6 +978,145 @@ function runInject(args, target) {
   }
 
   pushTerminalLine(`inject not supported on ${target.type}`, 'warn');
+}
+
+function runScp(args, target) {
+  if (!target) {
+    pushTerminalLine('scp failed: no target uplink.', 'warn');
+    return;
+  }
+
+  if (target.type !== 'mainterm' || target.id !== 'node_main') {
+    pushTerminalLine(`scp denied on ${target.type}. connect node_main first.`, 'warn');
+    return;
+  }
+
+  const artifact = String(args[0] || '').toLowerCase();
+  if (!artifact) {
+    pushTerminalLine('usage: scp breach.sh', 'warn');
+    return;
+  }
+
+  if (artifact !== 'breach.sh' && artifact !== 'breah.sh') {
+    pushTerminalLine(`upload rejected: ${artifact} not in payload catalog`, 'bad');
+    pushTerminalLine('expected artifact: breach.sh', 'dim');
+    return;
+  }
+
+  G.terminalRuntime.mainPayloadUploaded = true;
+  addTrace(1.8, 'scp');
+  pushTerminalLine('breach.sh uploaded to node_main:/tmp/.cache', 'ok');
+  pushTerminalLine('next: source breach.sh', 'dim');
+}
+
+function runSource(args, target) {
+  if (!target) {
+    pushTerminalLine('source failed: no target uplink.', 'warn');
+    return;
+  }
+
+  if (target.type !== 'mainterm' || target.id !== 'node_main') {
+    pushTerminalLine(`source blocked on ${target.type}. connect node_main first.`, 'warn');
+    return;
+  }
+
+  const artifact = String(args[0] || '').toLowerCase();
+  if (!artifact) {
+    pushTerminalLine('usage: source breach.sh', 'warn');
+    return;
+  }
+
+  if (artifact !== 'breach.sh' && artifact !== 'breah.sh') {
+    pushTerminalLine(`source: ${artifact}: not found`, 'bad');
+    return;
+  }
+
+  if (!G.terminalRuntime.mainPayloadUploaded) {
+    pushTerminalLine('source failed: breach.sh not uploaded. run scp breach.sh first.', 'warn');
+    return;
+  }
+
+  const progress = getMainAuthProgress();
+  const missing = Math.max(0, progress.required - progress.recovered);
+  if (missing > 0) {
+    const bruteHeat = 18 + missing * 14;
+    const bruteTrace = 2.8 + missing * 1.4;
+    addTerminalHeat(bruteHeat, 'source_bruteforce');
+    addTrace(bruteTrace, 'source_bruteforce');
+    pushTerminalLine(`auth bypass active: missing shard(s) ${missing}. heat +${bruteHeat}.`, 'warn');
+  }
+
+  if (G.mainHacked) {
+    pushTerminalLine('main terminal already compromised.', 'dim');
+    return;
+  }
+
+  if (G.hackingMain) {
+    pushTerminalLine('payload already running on node_main.', 'dim');
+    return;
+  }
+
+  G.terminalRuntime.mainPayloadUploaded = false;
+  G.terminalRuntime.mainHackLogStep = -1;
+  G.hackProgress = Math.max(0, G.hackProgress || 0);
+  G.hackingMain = true;
+  G.missionPhase = 1;
+  updateMissionText();
+  pushTerminalLine('breach.sh sourced. live channel established -> keep position stable.', 'ok');
+  pushTerminalLine('handoff armed: channel 100% will enter breach sequence.', 'dim');
+}
+
+function runFeedBlind(target) {
+  if (!target || target.type !== 'cam') {
+    pushTerminalLine('feed blind requires connected camera uplink', 'warn');
+    return;
+  }
+
+  target.ref.hacked = true;
+  dispatchTechnicianToCamera(target.ref);
+  pushTerminalLine(`camera ${target.id} blinded until technician repair`, 'ok');
+  rebuildList();
+}
+
+function runFeedLoop(target) {
+  if (!target || target.type !== 'cam') {
+    pushTerminalLine('feed loop requires connected camera uplink', 'warn');
+    return;
+  }
+
+  target.ref.hacked = true;
+  dispatchTechnicianToCamera(target.ref);
+  registerTimedHack('feed-loop', target.id, 10000, () => {
+    target.ref.hacked = false;
+    rebuildList();
+  });
+  pushTerminalLine(`camera ${target.id} feed loop active (10s)`, 'ok');
+  rebuildList();
+}
+
+function runElevatorUnlock(target) {
+  runUnlock(['elevator'], target);
+}
+
+function runElevatorMove(direction) {
+  if (!G.elevatorUnlocked) {
+    pushTerminalLine('elevator locked. run elevator unlock on node_main first.', 'warn');
+    return;
+  }
+
+  const desired = direction === 'up' ? TILE_TYPES.STAIR_UP : TILE_TYPES.STAIR_DOWN;
+  const nearby = findNearbyStair(desired, 1.5);
+  if (!nearby) {
+    pushTerminalLine(`no elevator ${direction} within 1.5t`, 'warn');
+    return;
+  }
+
+  G.P.x = nearby.x + 0.5;
+  G.P.y = nearby.y + 0.5;
+  G.stairTransitionArmed = true;
+  G.stairTransitionCooldownMs = 0;
+  G.stairTransitionRequested = true;
+  pushTerminalLine(`elevator ${direction} engaged`, 'ok');
 }
 
 function runBreach(args) {
@@ -1245,8 +1525,43 @@ function enumerateHackTargets(includeFar) {
     }, maxDist);
   }
 
+  const elevators = getElevatorTargets();
+  for (const elevator of elevators) {
+    pushTarget(out, elevator, Infinity);
+  }
+
   out.sort((a, b) => a.dist - b.dist);
   return out;
+}
+
+function getElevatorTargets() {
+  const out = [];
+  for (let y = 0; y < G.tiles.length; y += 1) {
+    const row = G.tiles[y] || [];
+    for (let x = 0; x < row.length; x += 1) {
+      const tile = row[x];
+      if (tile !== TILE_TYPES.STAIR_UP && tile !== TILE_TYPES.STAIR_DOWN) {
+        continue;
+      }
+
+      out.push({
+        id: tile === TILE_TYPES.STAIR_UP ? 'elevator_up_node' : 'elevator_down_node',
+        type: 'elevator',
+        label: tile === TILE_TYPES.STAIR_UP ? 'Elevator Up' : 'Elevator Down',
+        anchor: { x: x + 0.5, y: y + 0.5 },
+        ref: { x, y, tile },
+        dist: dst({ x: x + 0.5, y: y + 0.5 }, G.P),
+      });
+    }
+  }
+
+  const unique = new Map();
+  for (const item of out) {
+    if (!unique.has(item.id) || item.dist < unique.get(item.id).dist) {
+      unique.set(item.id, item);
+    }
+  }
+  return [...unique.values()];
 }
 
 function pushTarget(out, target, maxDist) {
@@ -1308,8 +1623,16 @@ function handleTerminalInputKeyDown(event) {
 
 function runHelp(args) {
   const topic = (args[0] || '').toLowerCase();
+  const target = resolveConnectedTarget();
 
   if (!topic) {
+    if (target) {
+      pushTerminalLine(`CONNECTED HELP -> ${target.id} [${target.type}]`, 'ok');
+      pushConnectedHelp(target);
+      pushTerminalLine("for global topics use help basics|doors|cameras|stealth|guards|technicians|terminals|mainterm|distraction", 'dim');
+      return;
+    }
+
     pushTerminalLine('HELP TOPICS', 'ok');
     pushTerminalLine('help basics  | help doors  | help cameras  | help stealth', 'dim');
     pushTerminalLine('help guards  | help technicians  | help terminals  | help mainterm', 'dim');
@@ -1348,8 +1671,9 @@ function runHelp(args) {
 
   if (topic === 'cameras') {
     pushTerminalLine('CAMERA FLOW', 'ok');
-    pushTerminalLine('example: scan local -> connect cam_0 -> inject loop -> disconnect', 'dim');
-    pushTerminalLine('or: connect cam_0 -> disable', 'dim');
+    pushTerminalLine('camera uplink range: 3.5 tiles max', 'dim');
+    pushTerminalLine('example: scan local -> connect cam_0 -> feed blind -> disconnect', 'dim');
+    pushTerminalLine('or: connect cam_0 -> feed loop -> disconnect', 'dim');
     return;
   }
 
@@ -1396,10 +1720,10 @@ function runHelp(args) {
     pushTerminalLine('MAIN TERMINAL METHODS', 'ok');
     pushTerminalLine('scan local -> connect node_main', 'dim');
     pushTerminalLine('requires side-terminal auth shards before full access', 'dim');
-    pushTerminalLine('inject relay     : temporary hack-speed boost', 'dim');
-    pushTerminalLine('deploy worm      : pressure/alert manipulation', 'dim');
-    pushTerminalLine('reroute          : alert shaping utility', 'dim');
-    pushTerminalLine('unlock elevator  : enables floor transition', 'dim');
+    pushTerminalLine('scp breach.sh    : upload breach payload', 'dim');
+    pushTerminalLine('source breach.sh : start breach channel', 'dim');
+    pushTerminalLine('elevator unlock  : enables floor transition auth', 'dim');
+    pushTerminalLine('elevator up/down : use nearby elevator (<=1.5t)', 'dim');
     pushTerminalLine('disconnect       : close uplink cleanly', 'dim');
     return;
   }
@@ -1431,14 +1755,14 @@ function runTutorial() {
   pushTerminalLine('camera tutorial:', 'dim');
   pushTerminalLine('scan local', 'dim');
   pushTerminalLine('connect cam_0', 'dim');
-  pushTerminalLine('inject loop', 'dim');
+  pushTerminalLine('feed blind or feed loop', 'dim');
   pushTerminalLine('disconnect', 'dim');
   pushTerminalLine('guard flow: connect guard_0 -> set friendly / override / disable', 'dim');
   pushTerminalLine('technician flow: connect tech_0 -> set friendly / override / disable', 'dim');
   pushTerminalLine('side terminal flow: connect node_side_1 -> breach firewall -> dump creds', 'dim');
   pushTerminalLine('distraction flow: connect vent_1 -> vent on (or lights cut / junction overload)', 'dim');
   pushTerminalLine('loot after ICE break: download map / download hack / transfer credits', 'dim');
-  pushTerminalLine('main terminal flow: connect node_main -> unlock elevator -> inject relay / deploy worm', 'dim');
+  pushTerminalLine('main terminal flow: connect node_main -> scp breach.sh -> source breach.sh -> elevator unlock', 'dim');
   pushTerminalLine("need examples later? use help guards / help technicians / help terminals / help mainterm", 'dim');
 }
 
@@ -1463,6 +1787,83 @@ function emitTutorialIntro() {
   pushTerminalLine('REALTIME TERMINAL ONLINE', 'ok');
   pushTerminalLine("new here? type 'tutorial'", 'dim');
   pushTerminalLine("need doors? type 'help doors'", 'dim');
+}
+
+function pushConnectedHelp(target) {
+  if (target.type === 'cam') {
+    pushTerminalLine('feed blind  : permanent blind until technician repair', 'dim');
+    pushTerminalLine('feed loop   : temporary loop for 10s', 'dim');
+    pushTerminalLine('disable     : force short offline window', 'dim');
+    return;
+  }
+
+  if (target.type === 'mainterm') {
+    pushTerminalLine('scp breach.sh     : upload main payload', 'dim');
+    pushTerminalLine('source breach.sh  : start breach channel', 'dim');
+    pushTerminalLine('elevator unlock   : authorize floor transitions', 'dim');
+    return;
+  }
+
+  if (target.type === 'elevator') {
+    pushTerminalLine('elevator up   : move up (must be within 1.5t of elevator up)', 'dim');
+    pushTerminalLine('elevator down : move down (must be within 1.5t of elevator down)', 'dim');
+    return;
+  }
+
+  if (target.type === 'distract') {
+    const nodeType = String(target.ref?.nodeType || 'generic').toLowerCase();
+    if (nodeType === 'vent') {
+      pushTerminalLine('vent on   : start ventilation lure', 'dim');
+      pushTerminalLine('vent off  : stop ventilation lure', 'dim');
+      return;
+    }
+    if (nodeType === 'lights' || nodeType === 'wallpanel') {
+      pushTerminalLine('lights cut : trigger light flicker investigation spike', 'dim');
+      return;
+    }
+    if (nodeType === 'junction') {
+      pushTerminalLine('junction overload : spark + alarm chirp distraction pulse', 'dim');
+      return;
+    }
+  }
+
+  pushTerminalLine('commands depend on connected object type.', 'dim');
+  pushTerminalLine('try: help basics', 'dim');
+}
+
+function pushConnectedCommandHint(target) {
+  if (target.type === 'cam') {
+    pushTerminalLine('camera uplink ready. commands: feed blind | feed loop | disable', 'dim');
+    return;
+  }
+
+  if (target.type === 'mainterm') {
+    pushTerminalLine('main uplink ready. commands: scp breach.sh -> source breach.sh -> elevator unlock', 'dim');
+    return;
+  }
+
+  if (target.type === 'elevator') {
+    pushTerminalLine('elevator uplink ready. commands: elevator up | elevator down', 'dim');
+    return;
+  }
+
+  if (target.type === 'distract') {
+    const nodeType = String(target.ref?.nodeType || 'generic').toLowerCase();
+    if (nodeType === 'vent') {
+      pushTerminalLine('distraction node ready. commands: vent on | vent off', 'dim');
+      return;
+    }
+    if (nodeType === 'lights' || nodeType === 'wallpanel') {
+      pushTerminalLine('distraction node ready. command: lights cut', 'dim');
+      return;
+    }
+    if (nodeType === 'junction') {
+      pushTerminalLine('distraction node ready. command: junction overload', 'dim');
+      return;
+    }
+    pushTerminalLine('distraction node ready. use help distraction for commands', 'dim');
+    return;
+  }
 }
 
 function updateScanHighlights(targets) {
@@ -1508,6 +1909,12 @@ function autocompleteInputValue(rawInput) {
     if ((firstCompleted === 'connect' || firstCompleted === 'link') && normalized !== firstCompleted) {
       return `${firstCompleted} `;
     }
+
+    const tokenCompletion = autocompleteCommandByToken(tokens, hasTrailingSpace);
+    if (tokenCompletion) {
+      return tokenCompletion;
+    }
+
     return firstCompleted;
   }
 
@@ -1536,12 +1943,258 @@ function autocompleteInputValue(rawInput) {
     return `connect ${argPrefix}`;
   }
 
+  const tokenCompletion = autocompleteCommandByToken(tokens, hasTrailingSpace);
+  if (tokenCompletion) {
+    return tokenCompletion;
+  }
+
   return autocompleteTerminalCommand(normalized);
+}
+
+function autocompleteCommandByToken(tokens, hasTrailingSpace) {
+  const phrases = getAutocompletePhraseTokens();
+  if (!phrases.length || !tokens.length) {
+    return '';
+  }
+
+  if (tokens.length === 1) {
+    const prefix = tokens[0] || '';
+    const matches = phrases.filter((phrase) => (phrase[0] || '').startsWith(prefix));
+    if (!matches.length) {
+      return '';
+    }
+
+    const firstTokens = [...new Set(matches.map((phrase) => phrase[0]))];
+    if (firstTokens.length === 1) {
+      return `${firstTokens[0]} `;
+    }
+
+    const common = longestCommonPrefix(firstTokens);
+    if (common.length > prefix.length) {
+      return common;
+    }
+
+    return '';
+  }
+
+  const segmentIndex = hasTrailingSpace ? tokens.length : tokens.length - 1;
+  const prefix = hasTrailingSpace ? '' : (tokens[segmentIndex] || '');
+  const baseTokens = hasTrailingSpace ? tokens : tokens.slice(0, -1);
+
+  const matches = phrases.filter((phrase) => {
+    if (phrase.length <= segmentIndex) {
+      return false;
+    }
+
+    for (let i = 0; i < baseTokens.length; i += 1) {
+      if (phrase[i] !== baseTokens[i]) {
+        return false;
+      }
+    }
+
+    return (phrase[segmentIndex] || '').startsWith(prefix);
+  });
+
+  if (!matches.length) {
+    return '';
+  }
+
+  const nextTokens = [...new Set(matches.map((phrase) => phrase[segmentIndex]))];
+  if (nextTokens.length === 1) {
+    return [...baseTokens, nextTokens[0]].join(' ');
+  }
+
+  const common = longestCommonPrefix(nextTokens);
+  if (common.length > prefix.length) {
+    return [...baseTokens, common].join(' ');
+  }
+
+  return '';
+}
+
+function getAutocompletePhraseTokens() {
+  const out = [];
+
+  for (const cmd of COMMAND_REGISTRY) {
+    const phrases = [cmd.phrase, ...(cmd.aliases || [])];
+    for (const phrase of phrases) {
+      const tokens = String(phrase || '').trim().toLowerCase().split(' ').filter(Boolean);
+      if (tokens.length) {
+        out.push(tokens);
+      }
+    }
+  }
+
+  return out;
 }
 
 function getAutocompleteTargetIds() {
   const ids = enumerateHackTargets(false).map((item) => (item.id || '').toLowerCase()).filter(Boolean);
   return [...new Set(ids)].sort((a, b) => a.localeCompare(b));
+}
+
+function parseConnectInlineChain(rawInput) {
+  const raw = String(rawInput || '').trim();
+  if (!raw) {
+    return null;
+  }
+
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length < 3 || String(parts[0]).toLowerCase() !== 'connect') {
+    return null;
+  }
+
+  const targetId = String(parts[1] || '').toLowerCase();
+  if (!targetId) {
+    return null;
+  }
+
+  const tail = parts.slice(2);
+  const segments = [];
+  let current = [];
+
+  for (const token of tail) {
+    if (token.startsWith('--')) {
+      if (current.length) {
+        segments.push(current.join(' '));
+      }
+      const next = token.slice(2);
+      current = next ? [next] : [];
+      continue;
+    }
+
+    current.push(token);
+  }
+
+  if (current.length) {
+    segments.push(current.join(' '));
+  }
+
+  if (!segments.length) {
+    return null;
+  }
+
+  const normalizedSegments = segments
+    .map((segment) => normalizeInlineSegment(targetId, segment))
+    .filter(Boolean);
+
+  if (!normalizedSegments.length) {
+    return null;
+  }
+
+  return [`connect ${targetId}`, ...normalizedSegments];
+}
+
+function normalizeInlineSegment(targetId, segment) {
+  const normalized = String(segment || '').trim().toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+
+  if (targetId.startsWith('cam') || targetId.startsWith('camera')) {
+    const cameraAction = resolveCameraInlineAction(normalized);
+    if (cameraAction) {
+      return cameraAction;
+    }
+  }
+
+  const resolvedFromTail = resolveInlineActionFromTail(normalized);
+  if (resolvedFromTail) {
+    return resolvedFromTail;
+  }
+
+  return normalized;
+}
+
+function resolveCameraInlineAction(segment) {
+  const tokens = String(segment || '').split(/\s+/).filter(Boolean);
+  if (!tokens.length) {
+    return '';
+  }
+
+  // Preserve the final actionable token so chains like "--loop blind"
+  // resolve to the intended command (feed blind).
+  for (let i = tokens.length - 1; i >= 0; i -= 1) {
+    if (tokens[i] === 'blind') {
+      return 'feed blind';
+    }
+    if (tokens[i] === 'loop') {
+      return 'feed loop';
+    }
+  }
+
+  return '';
+}
+
+function resolveInlineActionFromTail(segment) {
+  const tokens = String(segment || '').split(/\s+/).filter(Boolean);
+  if (!tokens.length) {
+    return '';
+  }
+
+  for (let start = tokens.length - 1; start >= 0; start -= 1) {
+    const candidate = tokens.slice(start).join(' ');
+    const parsed = parseTerminalCommand(candidate);
+    if (parsed.ok) {
+      return candidate;
+    }
+  }
+
+  return '';
+}
+
+function getTerminalPrompt() {
+  const runtime = G.terminalRuntime;
+  if (!runtime?.connectedTargetId) {
+    return 'op@gp://$';
+  }
+
+  const scope = String(runtime.connectedTargetId || 'node').toLowerCase();
+  return `op@gp://${scope}$`;
+}
+
+function findNearbyStair(tileType, maxDist) {
+  let best = null;
+
+  for (let y = 0; y < G.tiles.length; y += 1) {
+    const row = G.tiles[y] || [];
+    for (let x = 0; x < row.length; x += 1) {
+      if (row[x] !== tileType) {
+        continue;
+      }
+
+      const d = dst({ x: x + 0.5, y: y + 0.5 }, G.P);
+      if (d > maxDist) {
+        continue;
+      }
+
+      if (!best || d < best.dist) {
+        best = { x, y, dist: d };
+      }
+    }
+  }
+
+  return best;
+}
+
+function dispatchTechnicianToCamera(camera) {
+  if (G.techDisabled || !camera) {
+    return;
+  }
+
+  if (byType('tech').some((tech) => !tech.dead && tech.targetId === camera.id)) {
+    return;
+  }
+
+  const technician = byType('tech').find((tech) => !tech.dead && tech.state === 'patrol');
+  if (!technician) {
+    return;
+  }
+
+  technician.state = 'repair';
+  technician.targetId = camera.id;
+  technician.repairTimer = 0;
+  technician.repairDuration = 0;
 }
 
 function longestCommonPrefix(values) {
@@ -1650,6 +2303,8 @@ function formatScanLine(item, includeDistance) {
     ? 'door-panel'
     : item.type === 'door'
       ? 'door'
+      : item.type === 'elevator'
+        ? 'elevator'
       : item.type === 'distract'
         ? 'distract'
       : item.type;
@@ -1662,6 +2317,7 @@ function getScanLineClass(item) {
 	if (item.type === 'drone') return 'scan-drone';
 	if (item.type === 'tech') return 'scan-tech';
 	if (item.type === 'wterm' || item.type === 'door') return 'scan-door';
+  if (item.type === 'elevator') return 'scan-door';
   if (item.type === 'distract') return 'scan-terminal';
 	if (item.type === 'mainterm' || item.type === 'sterm') return 'scan-terminal';
 	return 'scan-generic';

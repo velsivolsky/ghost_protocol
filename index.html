@@ -859,27 +859,27 @@
   </div>
 
   <div id="nb-panel">
-    <div class="nb-head">SYSTEM: CYBER COMBAT - NETWORK BREACH</div>
-    <div class="nb-sub">Przejmij rdzen node zanim TRACE osiagnie 100%</div>
+    <div class="nb-head">>> INTRUSION ACTIVE: node_main &mdash; exfil target acquired</div>
+    <div class="nb-sub">bypass ICE layers before trace hits 100% &mdash; abort to cut uplink</div>
     <div id="nb-warning" class="nb-warning"></div>
     <div id="nb-help" class="nb-help"></div>
     <div id="nb-stats" class="nb-stats"></div>
-    <div class="nb-grid">
-      <div class="nb-col">
-        <div class="nb-col-title">HACKI OPERATORA</div>
-        <div id="nb-actions" class="nb-actions"></div>
-      </div>
-      <div class="nb-col">
-        <div class="nb-col-title">AKTYWNE ICE</div>
+    <div class="nb-stream">
+      <div class="nb-section">
+        <div class="nb-col-title">[active_processes]</div>
         <div id="nb-enemies" class="nb-enemies"></div>
       </div>
-      <div class="nb-col">
-        <div class="nb-col-title">DZIENNIK SIECI</div>
+      <div class="nb-section">
+        <div class="nb-col-title">[command_queue]</div>
+        <div id="nb-actions" class="nb-actions"></div>
+      </div>
+      <div class="nb-section">
+        <div class="nb-col-title">[system_log]</div>
         <div id="nb-log" class="nb-log"></div>
       </div>
     </div>
     <div id="nb-footer" class="nb-footer"></div>
-    <button id="nb-abort" class="nb-abort">PRZERWIJ POLACZENIE</button>
+    <button id="nb-abort" class="nb-abort">$ abort --cut-uplink</button>
   </div>
 
   <!-- Fake loading screen for immersion -->
@@ -912,7 +912,7 @@
         <div class="rt-left">
           <div id="rt-output" class="rt-output"></div>
           <div class="rt-input-row">
-            <span class="rt-prompt">op@gp://</span>
+            <span id="rt-prompt" class="rt-prompt">op@gp://$</span>
             <input id="rt-input" class="rt-input" type="text" autocomplete="off" spellcheck="false" placeholder="connect cam_01" />
             <span class="rt-cursor"></span>
           </div>

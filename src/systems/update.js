@@ -11,7 +11,7 @@ import { tickDrone, createDrone } from '../entities/drone.js';
 import { createGuard, tickGuard } from '../entities/guard.js';
 import { createTechnician, tickTechnician } from '../entities/technician.js';
 import { updateMissionText, win } from './mission.js';
-import { hideMainHackLoading, log, rebuildList, refreshHUD, syncMainHackLoading, syncZoneLabel } from './ui.js';
+import { hideMainHackLoading, log, rebuildList, refreshHUD, syncZoneLabel } from './ui.js';
 import { clamp, dst } from '../utils/math.js';
 import { canWalk } from '../world/map.js';
 import { updateVisibility } from './visibility.js';
@@ -21,7 +21,7 @@ import { getTimeScale, startQuickHackWindow, tickQuickHackWindow } from './quick
 import { launchNetworkBreach } from './networkBreach.js';
 import { resolveRunFailure } from './recruitment.js';
 import { tickTraceSystem } from './traceSystem.js';
-import { isTerminalOverlayOpen, tickTerminalRuntime } from './terminalRuntime.js';
+import { isTerminalOverlayOpen, noteMainHackChannelProgress, tickTerminalRuntime } from './terminalRuntime.js';
 import { tickTutorial, updateTutorialPanel } from './tutorial.js';
 
 const STAIR_TRANSITION_COOLDOWN_MS = 900;
@@ -156,9 +156,10 @@ export function update(dt) {
 	if (G.hackingMain) {
 		G.hackProgress += simDt * 0.025 * (1 + G.hackSpeedBonus);
 		G.alert = clamp(G.alert + simDt * 0.008);
-		syncMainHackLoading();
+		noteMainHackChannelProgress(G.hackProgress);
 
 		if (G.hackProgress >= 100) {
+			hideMainHackLoading();
 			launchNetworkBreach();
 		}
 	} else {

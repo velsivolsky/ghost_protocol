@@ -42,14 +42,15 @@ export function showCtx(screenX, screenY, target, targetType) {
   G.dom.contextTitle.textContent = target.desc || targetType;
 
   const inRange = dst(target, G.P) <= HACK_RANGE;
+  const camInRange = dst(target, G.P) <= 3.5;
   const bw = G.P.bw;
 
   if (targetType === 'cam') {
-    addCtxBtn('◉ Zaślepi kamerę (BW:15)', bw >= 15 && inRange && !target.hacked, () => {
+    addCtxBtn('◉ feed blind (BW:15)', bw >= 15 && camInRange && !target.hacked, () => {
       hackCam(target);
       showCtx(screenX, screenY, target, 'cam');
     });
-    addCtxBtn('◎ Zapętl feed -10s (BW:8)', bw >= 8 && inRange && !target.hacked, () => {
+    addCtxBtn('◎ feed loop -10s (BW:8)', bw >= 8 && camInRange && !target.hacked, () => {
       loopCam(target);
       showCtx(screenX, screenY, target, 'cam');
     });

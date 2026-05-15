@@ -41,8 +41,8 @@ const MAIN_HACK_LOADING_LINES = [
 	'SPOOFING OPERATOR SIGNATURE...',
 	'PATCHING BREACH VECTOR...',
 	'SEALING TRACE LEAKS...',
-	'PRIMING CYBER COMBAT LAYER...',
-	'ROOT ACCESS WINDOW READY.',
+	'EXECUTING breach.sh...',
+	'ROOT SESSION WINDOW READY.',
 ];
 
 export function bindUI() {
@@ -103,6 +103,7 @@ export function bindUI() {
 		hubContacts: document.getElementById('hub-contacts'),
 		terminalOverlay: document.getElementById('rt-overlay'),
 		terminalOutput: document.getElementById('rt-output'),
+		terminalPrompt: document.getElementById('rt-prompt'),
 		terminalInput: document.getElementById('rt-input'),
 		terminalSuggestion: document.getElementById('rt-suggestion'),
 		terminalTraceValue: document.getElementById('rt-trace-value'),
@@ -151,42 +152,7 @@ export function syncMainHackLoading() {
 	if (!G.dom.nbLoadingScreen || !G.dom.nbLoadingLines || !G.dom.nbLoadingBarFill) {
 		return;
 	}
-
-	if (!G.hackingMain || G.breachActive || G.mainHacked) {
-		hideMainHackLoading();
-		return;
-	}
-
-	const progress = Math.max(0, Math.min(100, G.hackProgress));
-	const visibleLines = Math.max(1, Math.ceil((progress / 100) * MAIN_HACK_LOADING_LINES.length));
-
-	G.dom.nbLoadingScreen.classList.add('show');
-	if (G.dom.nbLoadingHeader) {
-		G.dom.nbLoadingHeader.textContent = '[ MAIN TERMINAL LINK ]';
-	}
-
-	G.dom.nbLoadingLines.innerHTML = MAIN_HACK_LOADING_LINES.map((line, index) => {
-		const isVisible = index < visibleLines;
-		const isActive = isVisible && index === visibleLines - 1 && progress < 100;
-		const classes = ['nb-loading-line'];
-
-		if (!isVisible) {
-			classes.push('pending');
-		}
-
-		if (isActive) {
-			classes.push('active');
-		}
-
-		const prefix = isVisible ? '> ' : '... ';
-		return `<div class="${classes.join(' ')}">${prefix}${line}</div>`;
-	}).join('');
-
-	G.dom.nbLoadingBarFill.style.width = `${progress}%`;
-	G.dom.nbLoadingBarFill.style.boxShadow = progress >= 100
-		? '0 0 16px rgba(0, 255, 159, 0.7)'
-		: '';
-	G.dom.nbLoadingLines.scrollTop = G.dom.nbLoadingLines.scrollHeight;
+	hideMainHackLoading();
 }
 
 export function hideMainHackLoading() {
