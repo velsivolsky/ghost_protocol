@@ -654,10 +654,17 @@
 
               <div class="instructions-head">HAKOWANIE TERMINALA GLOWNEGO</div>
               <div class="instructions-card">
-                <div class="instructions-line">Musisz stac blisko terminala glownego.</div>
-                <div class="instructions-line">Po starcie kanalu nie mozesz sie ruszyc.</div>
-                <div class="instructions-line">Ruch lub odejscie przerywa postep.</div>
-                <div class="instructions-line">Po 100% uruchamia sie sekwencja Network Breach.</div>
+                <div class="instructions-line"><b>CEL:</b> przejac node_main i wypelnic payload slot_A/B/C.</div>
+                <div class="instructions-line"><b>KROK 1:</b> Najpierw zdobadz auth shardy z side terminali.</div>
+                <div class="instructions-line">Flow side: connect node_side_# -> breach firewall -> dump creds.</div>
+                <div class="instructions-line"><b>KROK 2:</b> Podejdz do glownego terminala i polacz sie.</div>
+                <div class="instructions-line">connect node_main (dziala tez: connect node main).</div>
+                <div class="instructions-line"><b>KROK 3:</b> Wejdz w tryb MAIN_BREACH.</div>
+                <div class="instructions-line">breach node main (dziala tez: breach node_main / breach main node).</div>
+                <div class="instructions-line"><b>KROK 4:</b> W trybie breach wykonuj komendy w tej kolejnosci:</div>
+                <div class="instructions-line">crack ice -> probe lock -> upload creds lub inject bypass -> upload payload slot_a/slot_b/slot_c.</div>
+                <div class="instructions-line"><b>KROK 5:</b> Gdy trace jest za wysoki, wpisz abort breach (bezpieczne wyjscie, postep zostaje).</div>
+                <div class="instructions-line"><b>KROK 6:</b> Po sukcesie odblokuj trasy: elevator unlock, potem elevator up/down.</div>
               </div>
 
               <div class="instructions-head">LIVE TERMINAL HELP</div>
@@ -668,7 +675,8 @@
                 <div class="instructions-line">Kamera: scan local -> connect cam_0 -> inject loop -> disconnect</div>
                 <div class="instructions-line">Distrakcja: connect vent_1/lights_1/junction_1/wallpanel_1 -> vent on/off / lights cut / junction overload</div>
                 <div class="instructions-line">Side terminal auth: connect node_side_# -> breach firewall -> dump creds</div>
-                <div class="instructions-line">Main terminal access: connect node_main -> unlock elevator</div>
+                <div class="instructions-line">Main breach start: connect node_main -> breach node main -> crack ice</div>
+                <div class="instructions-line">Pelny opis breacha: help mainterm</div>
                 <div class="instructions-line">Utility: clear czyści bufor wyjścia terminala.</div>
                 <div class="instructions-line">Tooltipy na mapie pokazują format: Nazwa obiektu (nazwa sieciowa).</div>
                 <div class="instructions-line">Dodatkowe tematy: help basics, help doors, help cameras, help stealth</div>
@@ -681,7 +689,14 @@
                 <div class="instructions-line"><b>GUARDS/TECH:</b> connect guard_0/tech_0 -> set friendly / override / disable</div>
                 <div class="instructions-line"><b>DISTRACTIONS:</b> connect vent_1/lights_1/junction_1/wallpanel_1 -> vent on/off / lights cut / junction overload</div>
                 <div class="instructions-line"><b>SIDE TERMINALS:</b> connect node_side_# -> breach firewall -> dump creds -> download map/hack/credits</div>
-                <div class="instructions-line"><b>MAIN TERMINAL:</b> connect node_main -> unlock elevator -> inject relay / deploy worm / reroute</div>
+                <div class="instructions-line"><b>MAIN BREACH COMMANDS:</b></div>
+                <div class="instructions-line">breach node main - wlacza tryb main_breach na node_main</div>
+                <div class="instructions-line">crack ice - lamie firewall.ice i odblokowuje etap locka</div>
+                <div class="instructions-line">probe lock - sprawdza stan auth.lock (niski koszt)</div>
+                <div class="instructions-line">inject bypass - forsuje lock, ale mocno podnosi trace</div>
+                <div class="instructions-line">upload creds - wrzuca credentiale ze zdobytych shardow</div>
+                <div class="instructions-line">upload payload slot_a / slot_b / slot_c - wypelnia sloty payloadu</div>
+                <div class="instructions-line">abort breach - awaryjne wyjscie, zapisuje aktualny postep</div>
                 <div class="instructions-line"><b>TOPICS:</b> help guards, help technicians, help terminals, help mainterm, help distraction</div>
               </div>
 
@@ -1025,7 +1040,7 @@
   <div id="terminal-stream-overlay"><div id="ts-lines"></div></div>
   <div id="ambient-bg-overlay"></div>
 
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="./src/main.js?v=20260517"></script>
   <script>
     (function () {
       const STORAGE_KEY = 'gp_recovery_terminal_state';

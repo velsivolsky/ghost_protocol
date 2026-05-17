@@ -8,6 +8,15 @@ import { getCommandDef, COMMAND_REGISTRY } from './terminalCommands.js';
 import { addTrace, activateGhostWindow, activateTraceMask, softenTrace } from './traceSystem.js';
 import { noteTutorialCommand, noteTutorialScan } from './tutorial.js';
 import { grantQuickHack } from './quickhacks.js';
+import {
+  handleAbortBreach,
+  handleCrackIce,
+  handleInjectBypass,
+  launchNetworkBreach,
+  handleProbeLock,
+  handleUploadCreds,
+  handleUploadPayload,
+} from './networkBreach.js';
 
 const TERMINAL_HEAT_DECAY_PER_SEC = 6.5;
 const TERMINAL_HEAT_OVERHEAT_DECAY_PER_SEC = 3.25;
@@ -56,6 +65,12 @@ const COMMAND_HEAT_COSTS = {
   ddos: 24,
   slow: 10,
   crash: 18,
+  crack_ice: 22,
+  probe_lock: 8,
+  inject_bypass: 28,
+  upload_creds: 12,
+  upload_payload: 10,
+  abort_breach: 0,
 };
 
 const COMMAND_BW_COSTS = {
@@ -86,6 +101,10 @@ const COMMAND_BW_COSTS = {
   cripple: 6,
   slow: 5,
   crash: 7,
+  inject_bypass: 10,
+  upload_creds: 10,
+  upload_payload: 10,
+  abort_breach: 0,
   ddos: 10,
 };
 
@@ -501,9 +520,22 @@ function queueTerminalCommand(rawInput) {
     return;
   }
 
+  // Block non-breach commands in main_breach context
+  if (G.terminalRuntime.commandContext === 'main_breach' && def.requiredContext !== 'main_breach' && commandId !== 'disconnect') {
+    pushTerminalLine('ACCESS DENIED. PROVIDE AUTHENTICATION CREDENTIALS', 'bad');
+    return;
+  }
+
   if (def.requiredContext === 'connected' && !G.terminalRuntime.connectedTargetId) {
     pushTerminalLine('no uplink. connect to a target first.', 'warn');
     return;
+  }
+  // --- MAIN NODE BREACH CONTEXT ---
+  if (def.requiredContext === 'main_breach') {
+    if (G.terminalRuntime.commandContext !== 'main_breach' || G.terminalRuntime.connectedTargetType !== 'mainterm') {
+      pushTerminalLine('brak aktywnego breach main node.', 'warn');
+      return;
+    }
   }
 
   const target = resolveConnectedTarget();
@@ -511,7 +543,8 @@ function queueTerminalCommand(rawInput) {
 
   const economy = G.terminalRuntime.economy || { heatMult: 1, traceMult: 1, latencyMs: 0, bwMult: 1 };
   const heatCost = Math.max(0, Math.round(getCommandHeatCost(parsed.commandId) * (economy.heatMult || 1)));
-  const traceCost = Math.max(0, (def.noise || 0) * 0.45 * (economy.traceMult || 1));
+  const baseTraceCost = typeof def.traceCost === 'number' ? def.traceCost : (def.noise || 0) * 0.45;
+  const traceCost = Math.max(0, baseTraceCost * (economy.traceMult || 1));
   const bwCost = Math.max(0, Math.round(getCommandBwCost(parsed.commandId) * (economy.bwMult || 1)));
 
   if ((G.P?.bw || 0) < bwCost) {
@@ -587,7 +620,7 @@ function resolveCommandExecution(pending) {
   }
 
   if (commandId === 'connect') {
-    runConnect(args[0]);
+    runConnect(args);
     noteTutorialCommand('connect', args);
     return;
   }
@@ -636,6 +669,36 @@ function resolveCommandExecution(pending) {
     if (runBreachFirewall(target)) {
       noteTutorialCommand('breach_firewall', args);
     }
+    return;
+  }
+
+  if (commandId === 'crack_ice') {
+    handleCrackIce(pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'probe_lock') {
+    handleProbeLock(pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'inject_bypass') {
+    handleInjectBypass(pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'upload_creds') {
+    handleUploadCreds(pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'upload_payload') {
+    handleUploadPayload(args[0], pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'abort_breach') {
+    handleAbortBreach(pushTerminalLine);
     return;
   }
 
@@ -817,7 +880,33 @@ function resolveCommandExecution(pending) {
   pushTerminalLine('command not wired yet.', 'warn');
 }
 
-function runConnect(targetId) {
+function resolveTargetAlias(argsOrId) {
+  const tokens = Array.isArray(argsOrId)
+    ? argsOrId.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+    : [String(argsOrId || '').trim().toLowerCase()].filter(Boolean);
+
+  if (!tokens.length) {
+    return '';
+  }
+
+  const first = tokens[0];
+  const second = tokens[1] || '';
+  const pair = `${first} ${second}`.trim();
+
+  if (
+    first === 'node_main' ||
+    first === 'main_node' ||
+    pair === 'node main' ||
+    pair === 'main node'
+  ) {
+    return 'node_main';
+  }
+
+  return tokens[0];
+}
+
+function runConnect(argsOrId) {
+  const targetId = resolveTargetAlias(argsOrId);
   if (!targetId) {
     pushTerminalLine('usage: connect <target_id>', 'warn');
     pushTerminalLine('tip: start with scan local to see nearby ids', 'dim');
@@ -844,14 +933,19 @@ function runConnect(targetId) {
   G.terminalRuntime.connectedTargetId = found.id;
   G.terminalRuntime.connectedTargetType = found.type;
   G.terminalRuntime.connectedTargetLabel = found.label;
+  
+  // Handle mainterm without access: enter main_breach context
+  if (found.type === 'mainterm' && !isMainTerminalAccessUnlocked()) {
+    G.terminalRuntime.commandContext = 'main_breach';
+    launchNetworkBreach();
+    pushTerminalLine(`node_main >> access_control.sys ACTIVE`, 'bad');
+    pushTerminalLine('ACCESS DENIED. PROVIDE AUTHENTICATION CREDENTIALS', 'bad');
+    pushTerminalLine('available: disconnect', 'dim');
+    return;
+  }
+  
   pushTerminalLine(`uplink established -> ${found.id} [${found.type}]`, 'ok');
   pushConnectedCommandHint(found);
-
-  if (found.type === 'mainterm' && !isMainTerminalAccessUnlocked()) {
-    const progress = getMainAuthProgress();
-    pushTerminalLine(`main terminal locked [${progress.recovered}/${progress.required} shards]`, 'warn');
-    pushTerminalLine('flow: connect node_side_# -> breach firewall -> dump creds', 'dim');
-  }
 
   if (found.type === 'wterm') {
     pushTerminalLine(`door control path detected. next command: unlock`, 'dim');
@@ -873,6 +967,12 @@ function runDisconnect() {
   G.terminalRuntime.connectedTargetType = null;
   G.terminalRuntime.connectedTargetLabel = 'NONE';
   G.terminalRuntime.mainPayloadUploaded = false;
+  
+  // Exit main_breach context if disconnecting from mainterm
+  if (G.terminalRuntime.commandContext === 'main_breach') {
+    G.terminalRuntime.commandContext = 'normal';
+    handleAbortBreach(pushTerminalLine);
+  }
 }
 
 function runScanLocal() {
@@ -1175,30 +1275,15 @@ function runSource(args, target) {
   const missing = Math.max(0, progress.required - progress.recovered);
   if (missing > 0) {
     const bruteHeat = 18 + missing * 14;
-    const bruteTrace = 2.8 + missing * 1.4;
-    addTerminalHeat(bruteHeat, 'source_bruteforce');
-    addTrace(bruteTrace, 'source_bruteforce');
-    pushTerminalLine(`auth bypass active: missing shard(s) ${missing}. heat +${bruteHeat}.`, 'warn');
-  }
-
-  if (G.mainHacked) {
-    pushTerminalLine('main terminal already compromised.', 'dim');
+    if (!G.terminalRuntime.lastSourceLog || performance.now() - G.terminalRuntime.lastSourceLog > 2000) {
+      G.terminalRuntime.lastSourceLog = performance.now();
+      pushTerminalLine(`source: missing ${missing} shards. brute force heat: ${bruteHeat}`, 'warn');
+    }
     return;
   }
 
-  if (G.hackingMain) {
-    pushTerminalLine('payload already running on node_main.', 'dim');
-    return;
-  }
-
-  G.terminalRuntime.mainPayloadUploaded = false;
-  G.terminalRuntime.mainHackLogStep = -1;
-  G.hackProgress = Math.max(0, G.hackProgress || 0);
-  G.hackingMain = true;
-  G.missionPhase = 1;
-  updateMissionText();
-  pushTerminalLine('breach.sh sourced. live channel established -> keep position stable.', 'ok');
-  pushTerminalLine('handoff armed: channel 100% will enter breach sequence.', 'dim');
+  G.dom.terminalOutput.innerHTML = '';
+  pushTerminalLine('screen cleared.', 'sys', true);
 }
 
 function runFeedBlind(target) {
@@ -1255,7 +1340,7 @@ function runElevatorMove(direction) {
 }
 
 function runBreach(args) {
-  const targetId = args[0];
+  const targetId = resolveTargetAlias(args);
 
   if (!targetId) {
     pushTerminalLine('usage: breach <node_id>', 'warn');
@@ -1271,6 +1356,21 @@ function runBreach(args) {
   G.terminalRuntime.connectedTargetId = found.id;
   G.terminalRuntime.connectedTargetType = found.type;
   G.terminalRuntime.connectedTargetLabel = found.label;
+
+  if (found.type === 'mainterm') {
+    if (!isMainTerminalAccessUnlocked()) {
+      const progress = getMainAuthProgress();
+      pushTerminalLine(`main terminal locked [${progress.recovered}/${progress.required} shards]`, 'warn');
+      pushTerminalLine('flow: connect node_side_# -> breach firewall -> dump creds', 'dim');
+      return;
+    }
+    launchNetworkBreach();
+    addTrace(3.1, 'breach');
+    pushTerminalLine('BREACH LINK ARMED -> MAIN NODE ONLINE', 'ok');
+    pushTerminalLine('next: crack ice', 'dim');
+    return;
+  }
+
   addTrace(3.1, 'breach');
   pushTerminalLine(`breach success -> uplink now on ${found.id}`, 'ok');
 }
@@ -1861,13 +1961,22 @@ function runHelp(args) {
 
   if (topic === 'mainterm') {
     pushTerminalLine('MAIN TERMINAL METHODS', 'ok');
-    pushTerminalLine('scan local -> connect node_main', 'dim');
-    pushTerminalLine('requires side-terminal auth shards before full access', 'dim');
-    pushTerminalLine('scp breach.sh    : upload breach payload', 'dim');
-    pushTerminalLine('source breach.sh : start breach channel', 'dim');
-    pushTerminalLine('elevator unlock  : enables floor transition auth', 'dim');
-    pushTerminalLine('elevator up/down : use nearby elevator (<=1.5t)', 'dim');
-    pushTerminalLine('disconnect       : close uplink cleanly', 'dim');
+    pushTerminalLine('GOAL: take over node_main and finish payload slots A/B/C.', 'dim');
+    pushTerminalLine('STEP 0 (prep): collect shards from side terminals first.', 'dim');
+    pushTerminalLine('side prep flow: connect node_side_# -> breach firewall -> dump creds', 'dim');
+    pushTerminalLine('STEP 1: connect node_main (alias: connect node main)', 'dim');
+    pushTerminalLine('STEP 2: breach node main (alias: breach node_main / breach main node)', 'dim');
+    pushTerminalLine('this starts MAIN_BREACH mode. then use commands below:', 'dim');
+    pushTerminalLine('crack ice            : break firewall.ice and open lock stage', 'dim');
+    pushTerminalLine('probe lock           : scan auth.lock state, low risk info action', 'dim');
+    pushTerminalLine('inject bypass        : force bypass on lock, high trace cost', 'dim');
+    pushTerminalLine('upload creds         : upload shard credentials to satisfy lock', 'dim');
+    pushTerminalLine('upload payload slot_a: upload payload to slot A', 'dim');
+    pushTerminalLine('upload payload slot_b: upload payload to slot B', 'dim');
+    pushTerminalLine('upload payload slot_c: upload payload to slot C (final)', 'dim');
+    pushTerminalLine('abort breach         : safe exit from breach mode, keeps progress', 'dim');
+    pushTerminalLine('after breach: elevator unlock -> elevator up/down if needed', 'dim');
+    pushTerminalLine('rule: if trace is too hot, use abort breach and reset tempo.', 'dim');
     return;
   }
 
@@ -1905,7 +2014,17 @@ function runTutorial() {
   pushTerminalLine('side terminal flow: connect node_side_1 -> breach firewall -> dump creds', 'dim');
   pushTerminalLine('distraction flow: connect vent_1 -> vent on (or lights cut / junction overload)', 'dim');
   pushTerminalLine('loot after ICE break: download map / download hack / transfer credits', 'dim');
-  pushTerminalLine('main terminal flow: connect node_main -> scp breach.sh -> source breach.sh -> elevator unlock', 'dim');
+  pushTerminalLine('MAIN BREACH FOR BEGINNERS', 'ok');
+  pushTerminalLine('goal: take over node_main and fill payload slots A/B/C.', 'dim');
+  pushTerminalLine('1) prep creds on side nodes: connect node_side_# -> breach firewall -> dump creds', 'dim');
+  pushTerminalLine('2) connect to main: connect node_main (also works: connect node main)', 'dim');
+  pushTerminalLine('3) start breach mode: breach node main (also: breach node_main / breach main node)', 'dim');
+  pushTerminalLine('4) break ICE: crack ice', 'dim');
+  pushTerminalLine('5) check lock status: probe lock', 'dim');
+  pushTerminalLine('6) satisfy lock: upload creds (or inject bypass if you must force it)', 'dim');
+  pushTerminalLine('7) upload payloads: upload payload slot_a -> slot_b -> slot_c', 'dim');
+  pushTerminalLine('8) if trace is too high: abort breach (safe exit, progress is kept)', 'dim');
+  pushTerminalLine('9) after success: elevator unlock -> elevator up/down', 'dim');
   pushTerminalLine("need examples later? use help guards / help technicians / help terminals / help mainterm", 'dim');
 }
 
@@ -2975,5 +3094,35 @@ export function closeDetectionTerminal() {
     G.terminalRuntime.connectedTargetId = null;
     G.terminalRuntime.connectedTargetType = null;
     G.terminalRuntime.connectedTargetLabel = 'NONE';
+  }
+}
+
+function listRewards() {
+  const rewards = G.terminalRuntime.rewards || {};
+
+  pushTerminalLine('rewards/', 'sys');
+
+  if (rewards.data_fragments && rewards.data_fragments.length > 0) {
+    pushTerminalLine('  data_fragments/', 'dim');
+    rewards.data_fragments.forEach((fragment) => {
+      pushTerminalLine(`    ${fragment}`, 'ok');
+    });
+  } else {
+    pushTerminalLine('  data_fragments/ (empty)', 'dim');
+  }
+
+  if (rewards.contracts && rewards.contracts.length > 0) {
+    pushTerminalLine('  contracts/', 'dim');
+    rewards.contracts.forEach((contract) => {
+      pushTerminalLine(`    ${contract}`, 'ok');
+    });
+  } else {
+    pushTerminalLine('  contracts/ (empty)', 'dim');
+  }
+
+  if (rewards.money) {
+    pushTerminalLine(`  money: ¥${rewards.money}`, 'ok');
+  } else {
+    pushTerminalLine('  money: ¥0', 'dim');
   }
 }

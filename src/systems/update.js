@@ -18,7 +18,7 @@ import { updateVisibility } from './visibility.js';
 import { lineOfSight } from '../utils/los.js';
 import { closeCtx } from './hacking.js';
 import { getTimeScale, startQuickHackWindow, tickQuickHackWindow } from './quickhacks.js';
-import { launchNetworkBreach } from './networkBreach.js';
+import { launchNetworkBreach, tickNetworkBreach } from './networkBreach.js';
 import { resolveRunFailure } from './recruitment.js';
 import { tickTraceSystem } from './traceSystem.js';
 import { isTerminalOverlayOpen, noteMainHackChannelProgress, tickTerminalRuntime } from './terminalRuntime.js';
@@ -203,6 +203,7 @@ export function update(dt) {
 
 	checkDeadGuardDiscovery();
 	tickTerminalRuntime(dt);
+	tickNetworkBreach(Date.now(), dt);
 	tickTraceSystem(dt);
 
 	if (G.alert > 0 && G.tick % 90 === 0) {

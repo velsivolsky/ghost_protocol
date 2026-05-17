@@ -18,6 +18,7 @@ function createTerminalRuntimeState() {
     scriptQueue: [],
     activeHacks: [],
     commandCooldownMs: 0,
+    commandContext: 'normal',
     systemLogTickMs: 0,
     networkStatus: 'DORMANT',
     responseDelayMs: 0,

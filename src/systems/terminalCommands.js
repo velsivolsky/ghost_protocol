@@ -1,3 +1,12 @@
+import {
+  handleCrackIce,
+  handleProbeLock,
+  handleInjectBypass,
+  handleUploadCreds,
+  handleUploadPayload,
+  handleAbortBreach,
+} from './networkBreach.js';
+
 export const COMMAND_REGISTRY = [
   {
     id: 'connect',
@@ -418,6 +427,84 @@ export const COMMAND_REGISTRY = [
     noise: 6,
     latencyMs: 950,
     help: 'crash - przeciaza system celu (lagspike 13s)',
+  },
+  {
+    id: 'crack_ice',
+    phrase: 'crack ice',
+    aliases: [],
+    namespace: 'main_breach',
+    requiredContext: 'main_breach',
+    noise: 12,
+    traceCost: 14,
+    latencyMs: 1800,
+    help: 'crack ice - łamie firewall.ice (main node breach)',
+    handler: (args, log) => handleCrackIce(log),
+  },
+  {
+    id: 'probe_lock',
+    phrase: 'probe lock',
+    aliases: [],
+    namespace: 'main_breach',
+    requiredContext: 'main_breach',
+    noise: 7,
+    traceCost: 8,
+    latencyMs: 900,
+    help: 'probe lock - skanuje auth.lock',
+    handler: (args, log) => handleProbeLock(log),
+  },
+  {
+    id: 'inject_bypass',
+    phrase: 'inject bypass',
+    aliases: [],
+    namespace: 'main_breach',
+    requiredContext: 'main_breach',
+    noise: 16,
+    traceCost: 18,
+    latencyMs: 1400,
+    help: 'inject bypass - obchodzi auth.lock (kosztowny tracowo)',
+    handler: (args, log) => handleInjectBypass(log),
+  },
+  {
+    id: 'upload_creds',
+    phrase: 'upload creds',
+    aliases: ['upload credentials'],
+    namespace: 'main_breach',
+    requiredContext: 'main_breach',
+    noise: 10,
+    traceCost: 12,
+    latencyMs: 1200,
+    help: 'upload creds - uploaduje credentials z shardu (jeśli posiadasz)',
+    handler: (args, log) => handleUploadCreds(log),
+  },
+  {
+    id: 'upload_payload',
+    phrase: 'upload payload',
+    aliases: [],
+    namespace: 'main_breach',
+    requiredContext: 'main_breach',
+    noise: 18,
+    traceCost: 0,
+    latencyMs: 1000,
+    help: 'upload payload <slot> - uploaduje payload do slotu (A/B/C)',
+    handler: (args, log) => {
+      const slot = String(args[0] || '').toLowerCase();
+      if (!['slot_a', 'slot_b', 'slot_c'].includes(slot)) {
+        return log('Podaj slot: slot_A, slot_B lub slot_C.');
+      }
+      return handleUploadPayload(slot, log);
+    },
+  },
+  {
+    id: 'abort_breach',
+    phrase: 'abort breach',
+    aliases: [],
+    namespace: 'main_breach',
+    requiredContext: 'main_breach',
+    noise: 0,
+    traceCost: 0,
+    latencyMs: 400,
+    help: 'abort breach - bezpieczne wyjście, zapisuje postęp',
+    handler: (args, log) => handleAbortBreach(log),
   },
 ];
 
