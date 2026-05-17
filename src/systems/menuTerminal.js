@@ -1,4 +1,5 @@
 import { G, upgradeHack } from '../core/state.js';
+import { saveHubState } from '../core/persistence.js';
 import {
   ensureHubState,
   getActiveRunOffers,
@@ -427,7 +428,7 @@ function getIntelEnabledRuns() {
 
   const normalRuns = getActiveRunOffers();
   const recruitRuns = (getContacts() || [])
-    .filter((contact) => contact?.mission?.status === 'ready' || contact?.mission?.status === 'intel')
+    .filter((contact) => contact?.mission?.status === 'ready' || contact?.mission?.status === 'active' || contact?.mission?.status === 'intel')
     .map((contact) => {
       const risk = String(contact?.risk || '').toLowerCase();
       const danger = risk === 'hardcore' ? 10 : risk === 'hard' ? 8 : risk === 'medium' ? 5 : 2;
@@ -988,7 +989,7 @@ async function cmdRuns(args) {
 
   if (!sub || sub === 'list') {
     await preambleConnect();
-    const runs = getActiveRunOffers();
+    const runs = getIntelEnabledRuns();
     if (!runs.length) {
       commandWarn('NO RUN OFFERS ONLINE');
       return;
@@ -1009,7 +1010,7 @@ async function cmdRuns(args) {
       commandWarn('USAGE: run show <#|id>');
       return;
     }
-    const runs = getActiveRunOffers();
+    const runs = getIntelEnabledRuns();
     const runId = resolveIdFromList(arg, runs, (item) => item.id);
     const run = runs.find((item) => item.id === runId);
     if (!run) {
@@ -1045,17 +1046,30 @@ async function cmdRun(args) {
       commandWarn('USAGE: run select <#|id>');
       return;
     }
-    const runs = getActiveRunOffers();
+    const runs = getIntelEnabledRuns();
     const runId = resolveIdFromList(arg, runs, (item) => item.id);
     if (!runId) {
       commandErr(`UNKNOWN TARGET: ${arg}`);
       return;
     }
-    const result = setCurrentRunOffer(runId);
-    if (!result.success) {
-      commandErr(result.message || 'NODE ACCESS DENIED');
+
+    const run = runs.find((item) => item.id === runId) || null;
+    if (!run) {
+      commandErr(`UNKNOWN TARGET: ${arg}`);
       return;
     }
+
+    if (run.recruit) {
+      G.hub.currentRunId = run.id;
+      saveHubState();
+    } else {
+      const result = setCurrentRunOffer(runId);
+      if (!result.success) {
+        commandErr(result.message || 'NODE ACCESS DENIED');
+        return;
+      }
+    }
+
     commandOk(`RUN LOCKED: ${runId}`);
     stateMutatedCallback();
     return;

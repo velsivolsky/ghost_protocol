@@ -37,7 +37,7 @@ function getTutorialMissionText() {
   const step = G.tutorial?.step || 0;
 
   if (step === 0) {
-    return 'TUTORIAL | Poruszaj się WASD do podświetlonego obiektu';
+    return 'TUTORIAL | Ruch: przejdz WASD miedzy pokojami treningowymi';
   }
 
   if (step === 1) {
@@ -49,7 +49,7 @@ function getTutorialMissionText() {
   }
 
   if (step === 3) {
-    return 'TUTORIAL | Zrób skan: <b>scan local</b>';
+    return 'TUTORIAL | Skan: <b>scan local</b> lub <b>scan network</b>';
   }
 
   if (step === 4) {
@@ -57,35 +57,63 @@ function getTutorialMissionText() {
   }
 
   if (step === 5) {
-    return 'TUTORIAL | Kamera: <b>connect cam_0</b> -> <b>inject loop</b> -> <b>disconnect</b>';
+    return 'TUTORIAL | Kamera: <b>connect cam_0</b> -> <b>inject loop</b> lub <b>disable</b>';
   }
 
   if (step === 6) {
-    return 'TUTORIAL | Guard: <b>connect guard_0</b> -> <b>set friendly</b> / <b>override</b> / <b>disable</b>';
+    return 'TUTORIAL | Guard: <b>connect guard_0</b> -> <b>set friendly</b> / <b>override</b> / <b>disable</b> / <b>deploy worm</b>';
   }
 
   if (step === 7) {
-    return 'TUTORIAL | Technician: <b>connect tech_0</b> -> <b>set friendly</b> / <b>override</b> / <b>disable</b>';
+    return 'TUTORIAL | Technician: <b>connect tech_0</b> -> <b>set friendly</b> / <b>override</b> / <b>disable</b> / <b>deploy worm</b>';
   }
 
   if (step === 8) {
-    return 'TUTORIAL | Side terminal auth: <b>connect node_side_1</b> -> <b>breach firewall</b> -> <b>dump creds</b>';
+    return 'TUTORIAL | Drone: <b>connect drone_0</b> -> <b>set friendly</b> / <b>override</b> / <b>disable</b> / <b>deploy worm</b>';
   }
 
   if (step === 9) {
-    return 'TUTORIAL | Side terminal loot: <b>download hack</b> lub <b>transfer credits</b>';
+    return 'TUTORIAL | Dystrakcja swiatel: <b>connect lights_1</b> -> <b>lights cut</b>';
   }
 
   if (step === 10) {
-    return 'TUTORIAL | Main terminal: <b>connect node_main</b> -> <b>unlock elevator</b> -> <b>inject relay</b>';
+    return 'TUTORIAL | Dystrakcja paneli: <b>junction overload</b> na <b>junction_1</b> i <b>wallpanel_1</b>';
   }
 
   if (step === 11) {
-    return 'TUTORIAL | Distract: <b>connect vent_1/lights_1/junction_1/wallpanel_1</b> -> <b>vent on/off</b> / <b>lights cut</b> / <b>junction overload</b>';
+    return 'TUTORIAL | Dystrakcja wentylacji: <b>connect vent_1</b> -> <b>vent on</b>';
   }
 
   if (step === 12) {
-    return 'TUTORIAL | Encyclopedia: <b>help guards</b> / <b>help technicians</b> / <b>help terminals</b> / <b>help mainterm</b> / <b>help distraction</b>';
+    return 'TUTORIAL | Dystrakcja wentylacji: <b>vent off</b>';
+  }
+
+  if (step === 13) {
+    return 'TUTORIAL | Stealth checklista: <b>spoof</b> + <b>mask trace</b> + <b>ghost</b>';
+  }
+
+  if (step === 14) {
+    return 'TUTORIAL | Main node fail-case: <b>connect node_main</b> i sproboj akcji bez creds';
+  }
+
+  if (step === 15) {
+    return 'TUTORIAL | Side A: <b>connect node_side_1</b> -> <b>breach firewall</b>';
+  }
+
+  if (step === 16) {
+    return 'TUTORIAL | Side A: <b>dump creds</b> na <b>node_side_1</b>';
+  }
+
+  if (step === 17) {
+    return 'TUTORIAL | Side B loot: <b>connect node_side_2</b> -> <b>download map</b> / <b>download hack</b> / <b>transfer credits</b>';
+  }
+
+  if (step === 18) {
+    return 'TUTORIAL | Main node success: <b>connect node_main</b> -> <b>elevator unlock</b>';
+  }
+
+  if (step === 19) {
+    return 'TUTORIAL | Uzyj windy: <b>elevator up</b> lub <b>elevator down</b>';
   }
 
   return 'TUTORIAL | Komplet. Wejdz w normalny run i uzywaj skrotow live terminala';

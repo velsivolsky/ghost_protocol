@@ -710,11 +710,13 @@ function resolveCommandExecution(pending) {
 
   if (commandId === 'elevator_up') {
     runElevatorMove('up');
+    noteTutorialCommand('elevator_up', args);
     return;
   }
 
   if (commandId === 'elevator_down') {
     runElevatorMove('down');
+    noteTutorialCommand('elevator_down', args);
     return;
   }
 
@@ -734,18 +736,21 @@ function resolveCommandExecution(pending) {
     softenTrace(7);
     G.alert = clamp((G.alert || 0) - 4, 0, 100);
     pushTerminalLine('signature spoofed. trace and alert damped.', 'ok');
+    noteTutorialCommand('spoof', args);
     return;
   }
 
   if (commandId === 'mask_trace') {
     activateTraceMask(8000);
     pushTerminalLine('trace masking mesh active (8s).', 'ok');
+    noteTutorialCommand('mask_trace', args);
     return;
   }
 
   if (commandId === 'ghost') {
     activateGhostWindow(7000);
     pushTerminalLine('ghost window online (7s).', 'ok');
+    noteTutorialCommand('ghost', args);
     return;
   }
 
@@ -792,7 +797,7 @@ function resolveCommandExecution(pending) {
   }
 
   if (commandId === 'trip_panel') {
-    if (runDistractionCommand('trip_panel', 'junction', target)) {
+    if (runDistractionCommand('trip_panel', null, target)) {
       noteTutorialCommand('trip_panel', args);
     }
     return;
@@ -1444,8 +1449,16 @@ function runDistractionCommand(action, expectedType, target) {
     return false;
   }
 
-  if (expectedType && ref.nodeType && ref.nodeType !== expectedType) {
-    pushTerminalLine(`command rejected: ${target.id} is ${ref.nodeType}, not ${expectedType}`, 'bad');
+  const actionAllowedTypes = {
+    trigger_vent: ['vent'],
+    vent_off: ['vent'],
+    cut_lights: ['lights'],
+    trip_panel: ['junction', 'wallpanel'],
+  };
+  const allowedTypes = actionAllowedTypes[action] || (expectedType ? [expectedType] : []);
+
+  if (allowedTypes.length && ref.nodeType && !allowedTypes.includes(ref.nodeType)) {
+    pushTerminalLine(`command rejected: ${target.id} is ${ref.nodeType}, expected ${allowedTypes.join('/')}`, 'bad');
     return false;
   }
 

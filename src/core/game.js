@@ -1,4 +1,5 @@
 import { G, initWaveState } from './state.js';
+import { loadHubState, saveHubState } from './persistence.js';
 import { HUD_HEIGHT } from './constants.js';
 import { generateMultiFloorMap, generateTutorialMap } from '../world/generator.js';
 import { createCamera } from '../entities/camera.js';
@@ -168,6 +169,7 @@ function setGlobalWalletCredits(nextCredits) {
   }
 
   pendingStart = { ...(pendingStart || { wave: 1 }), credits: value };
+  saveHubState();
   return value;
 }
 
@@ -576,7 +578,7 @@ function getAllRunsForPlan() {
 
   const normalRuns = getActiveRunOffers();
   const recruitRuns = (G.hub.contacts || [])
-    .filter((c) => c.mission?.status === 'ready' || c.mission?.status === 'intel')
+    .filter((c) => c.mission?.status === 'ready' || c.mission?.status === 'active' || c.mission?.status === 'intel')
     .map((c) => {
       const recruitRunId = toRecruitRunId(c.id);
       return {
@@ -698,14 +700,15 @@ function renderPlanRunDetail(runId) {
     infiltrateBtn.disabled = !selectedCrew;
     infiltrateBtn.onclick = () => {
       const operator = getSelectedCrewMember();
-      if (!operator) return;
-      if (run.recruit) {
-        // TODO: full recruitment run flow
+      if (!operator) {
+        log('Brak wybranego operatora.', 'w');
         return;
       }
-      setCurrentRunOffer(run.id);
-      hideMainMenu();
-      startRun(pendingStart.wave, pendingStart.credits);
+
+      const result = startSelectedRun(run.id);
+      if (!result.success) {
+        log(result.message, 'w');
+      }
     };
   }
 }
@@ -1239,9 +1242,19 @@ function startTerminalStream() {
 }
 
 function startSelectedRun(runId) {
-  const selectedRun = setCurrentRunOffer(runId);
-  if (!selectedRun.success) {
-    return { success: false, message: selectedRun.message || 'Nie mozna wybrac runu.' };
+  const planRun = getAllRunsForPlan().find((run) => run.id === runId) || null;
+  if (!planRun) {
+    return { success: false, message: 'Run nie istnieje.' };
+  }
+
+  if (planRun.recruit) {
+    G.hub.currentRunId = planRun.id;
+    saveHubState();
+  } else {
+    const selectedRun = setCurrentRunOffer(runId);
+    if (!selectedRun.success) {
+      return { success: false, message: selectedRun.message || 'Nie mozna wybrac runu.' };
+    }
   }
 
   const selectedCrew = getSelectedCrewMember();
@@ -1255,11 +1268,36 @@ function startSelectedRun(runId) {
 }
 
 function startSelectedRunFromMap(runId) {
-  startSelectedRun(runId);
+  return startSelectedRun(runId);
 }
 
 function startTutorialRun() {
   const map = generateTutorialMap();
+
+  if (Array.isArray(map.sideTerminals)) {
+    const authNode = map.sideTerminals.find((node) => node.id === 'node_side_1');
+    if (authNode) {
+      authNode.requiresFirewall = true;
+      authNode.firewallBreached = false;
+      authNode.authShard = 'AX9';
+      authNode.authShardIndex = 1;
+      authNode.authShardExtracted = false;
+      authNode.used = false;
+      authNode.hacked = false;
+    }
+
+    const lootNode = map.sideTerminals.find((node) => node.id === 'node_side_2');
+    if (lootNode) {
+      lootNode.requiresFirewall = false;
+      lootNode.firewallBreached = true;
+      lootNode.authShard = null;
+      lootNode.authShardIndex = null;
+      lootNode.authShardExtracted = false;
+      lootNode.used = false;
+      lootNode.hacked = false;
+    }
+  }
+
   const devices = createTutorialDevices(map);
 
   hideMainMenu();
@@ -1268,12 +1306,12 @@ function startTutorialRun() {
   G.code = null;
   G.codeFound = false;
   G.mainTerminalAuth = {
-    requiredShards: 0,
+    requiredShards: 1,
     recoveredByNode: {},
-    unlocked: true,
+    unlocked: false,
     passphrasePreview: null,
   };
-  G.elevatorUnlocked = true;
+  G.elevatorUnlocked = false;
   G.floor = 1;
   G.floorCount = 1;
   resetAudio();
@@ -1290,8 +1328,8 @@ function startTutorialRun() {
   rebuildList();
   closeCtx();
   log('Tryb treningowy online.', 'ok');
-  log('Wpisz tutorial lub help doors/help distraction w live terminalu.', 'ok');
-  log('Na mapie masz drzwi, panele, kamery, drona, technika, terminale i wezly dystrakcji.', 'ok');
+  log('Tutorial obejmuje pelny flow: dystrakcje, stealth, side nodes, fail/success na main node i winde.', 'ok');
+  log('Wpisz tutorial w live terminalu i realizuj kroki sekwencyjnie.', 'ok');
   render();
 }
 
@@ -1343,6 +1381,7 @@ function createTutorialDevices(map) {
 export function boot() {
   primeAudioSettings();
   bindUI();
+  loadHubState();
   initTerminalRuntime();
   loadDataFragments();
   initAudio();
@@ -1362,6 +1401,12 @@ export function boot() {
   }
 
   bindMainMenuClickSfx();
+  window.addEventListener('beforeunload', saveHubState);
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      saveHubState();
+    }
+  });
 
   initMenuTerminal({
     onStateMutated: () => {
@@ -1412,7 +1457,9 @@ export function startRun(wave, credits) {
     return;
   }
 
-  const run = G.hub.activeRuns.find((r) => r.id === G.hub.currentRunId);
+  const run = G.hub.activeRuns.find((r) => r.id === G.hub.currentRunId)
+    || getAllRunsForPlan().find((r) => r.id === G.hub.currentRunId)
+    || null;
   G.hub.activeRunMeta = run
     ? {
         id: run.id,

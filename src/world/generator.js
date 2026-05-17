@@ -336,6 +336,24 @@ export function generateTutorialMap() {
 		tiles[y][18] = TILE_TYPES.FLOOR;
 	}
 
+	for (let x = 4; x <= 10; x += 1) {
+		if (tiles[4]?.[x] === TILE_TYPES.WALL) {
+			tiles[4][x] = TILE_TYPES.FLOOR;
+		}
+	}
+
+	for (let y = 4; y <= 8; y += 1) {
+		if (tiles[y]?.[4] === TILE_TYPES.WALL) {
+			tiles[y][4] = TILE_TYPES.FLOOR;
+		}
+	}
+
+	for (let y = 15; y <= 19; y += 1) {
+		if (tiles[y]?.[16] === TILE_TYPES.WALL) {
+			tiles[y][16] = TILE_TYPES.FLOOR;
+		}
+	}
+
 	const tutorialPillars = [
 		{ x: 6, y: 7 },
 		{ x: 9, y: 7 },
@@ -452,8 +470,8 @@ export function generateTutorialMap() {
 		{
 			id: 'wallpanel_1',
 			networkName: makeNetworkName('WALLPANEL', 0, 1),
-			x: 16,
-			y: 10,
+			x: 17,
+			y: 11,
 			desc: 'Panel scienny',
 			type: 'wallpanel',
 			cooldownMs: 7200,

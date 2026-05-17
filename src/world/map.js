@@ -8,7 +8,12 @@ export function canWalk(tiles, x, y) {
 		return false;
 	}
 
-	const tile = tiles[ty][tx];
+	const row = tiles[ty];
+	if (!row) {
+		return false;
+	}
+
+	const tile = row[tx];
 
 	return (
 		tile === TILE_TYPES.FLOOR ||

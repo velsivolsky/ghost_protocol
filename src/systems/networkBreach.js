@@ -1,4 +1,5 @@
 import { G } from '../core/state.js';
+import { BREACH_BALANCE } from '../core/balance.js';
 import { hideMainHackLoading, log } from './ui.js';
 import { completeMainHack, handleMainHackFailure } from './mission.js';
 
@@ -8,30 +9,30 @@ import { completeMainHack, handleMainHackFailure } from './mission.js';
 
 const BALANCE = {
 	// Base economy
-	startTrace: 10,
-	passiveTracePerTurn: 1,
-	trackedTraceBonus: 3,
-	cpuRegen: 18,
-	ramRegen: 14,
+	startTrace: BREACH_BALANCE.startTrace,
+	passiveTracePerTurn: BREACH_BALANCE.passiveTracePerTurn,
+	trackedTraceBonus: BREACH_BALANCE.trackedTraceBonus,
+	cpuRegen: BREACH_BALANCE.cpuRegen,
+	ramRegen: BREACH_BALANCE.ramRegen,
 	// Black ICE threshold
-	blackIceTraceThreshold: 92,
-	blackIceTurnThreshold: 11,
-	maxEnemyArmor: 10,
+	blackIceTraceThreshold: BREACH_BALANCE.blackIceTraceThreshold,
+	blackIceTurnThreshold: BREACH_BALANCE.blackIceTurnThreshold,
+	maxEnemyArmor: BREACH_BALANCE.maxEnemyArmor,
 	// TRACE thresholds - gameplay cascades
-	traceGlitchThreshold: 25,
-	traceEscalationThreshold: 50,
-	traceWarningThreshold: 75,
-	tracePanicThreshold: 90,
+	traceGlitchThreshold: BREACH_BALANCE.traceGlitchThreshold,
+	traceEscalationThreshold: BREACH_BALANCE.traceEscalationThreshold,
+	traceWarningThreshold: BREACH_BALANCE.traceWarningThreshold,
+	tracePanicThreshold: BREACH_BALANCE.tracePanicThreshold,
 	// Stealth/decay mechanics
-	stealthTurnsForDecay: 2,
-	traceDecayPerTurn: 1,
+	stealthTurnsForDecay: BREACH_BALANCE.stealthTurnsForDecay,
+	traceDecayPerTurn: BREACH_BALANCE.traceDecayPerTurn,
 	// Synergy cooldown
-	lastActionCooldown: 2,
+	lastActionCooldown: BREACH_BALANCE.lastActionCooldown,
 	// Spam penalty
-	spamThresholdRepeats: 3,
-	spamPenaltyAdaptArmorPerRepeat: 1,
+	spamThresholdRepeats: BREACH_BALANCE.spamThresholdRepeats,
+	spamPenaltyAdaptArmorPerRepeat: BREACH_BALANCE.spamPenaltyAdaptArmorPerRepeat,
 	// Overclock
-	overclock: { cpuSpike: 40, ramSpike: 20, traceCost: 45 },
+	overclock: BREACH_BALANCE.overclock,
 };
 
 // ============================================================================

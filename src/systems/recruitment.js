@@ -1,4 +1,5 @@
 import { G } from '../core/state.js';
+import { saveHubState } from '../core/persistence.js';
 import { pruneRunIntelCache } from './runIntel.js';
 
 const MAX_ACTIVE_RUNS = 4;
@@ -123,6 +124,36 @@ export function ensureHubState() {
   if (!Object.prototype.hasOwnProperty.call(G.hub, 'activeRunMeta')) G.hub.activeRunMeta = null;
   if (!G.hub.runIntelCache || typeof G.hub.runIntelCache !== 'object') G.hub.runIntelCache = {};
 
+  const normalizeCrewSelection = () => {
+    if (!G.hub.crew.length) {
+      G.hub.selectedOperatorId = null;
+      G.hub.activeOperatorId = null;
+      return;
+    }
+
+    const selectedExists = G.hub.selectedOperatorId && G.hub.crew.some((member) => member.id === G.hub.selectedOperatorId);
+    if (!selectedExists) {
+      G.hub.selectedOperatorId = G.hub.crew[0].id;
+    }
+
+    const activeExists = G.hub.activeOperatorId && G.hub.crew.some((member) => member.id === G.hub.activeOperatorId);
+    if (!activeExists) {
+      G.hub.activeOperatorId = null;
+    }
+  };
+
+  const normalizeRunSelection = () => {
+    if (!G.hub.activeRuns.length) {
+      G.hub.currentRunId = null;
+      return;
+    }
+
+    const currentExists = G.hub.currentRunId && G.hub.activeRuns.some((run) => run.id === G.hub.currentRunId);
+    if (!currentExists) {
+      G.hub.currentRunId = G.hub.activeRuns[0].id;
+    }
+  };
+
   if (!G.quickHackCatalogOwned) {
     G.quickHackCatalogOwned = {
       optics: true,
@@ -184,17 +215,13 @@ export function ensureHubState() {
 
   ensureStarterCrew();
 
-  if (!G.hub.selectedOperatorId && G.hub.crew.length) {
-    G.hub.selectedOperatorId = G.hub.crew[0].id;
-  }
+  normalizeCrewSelection();
 
   while (G.hub.activeRuns.length < MAX_ACTIVE_RUNS) {
     G.hub.activeRuns.push(createRunOffer());
   }
 
-  if (!G.hub.currentRunId && G.hub.activeRuns.length) {
-    G.hub.currentRunId = G.hub.activeRuns[0].id;
-  }
+  normalizeRunSelection();
 }
 
 function createRunOffer() {
@@ -247,6 +274,7 @@ export function setCurrentRunOffer(runId) {
   }
 
   G.hub.currentRunId = runId;
+  saveHubState();
   return { success: true, message: 'Wybrano run do planu.' };
 }
 
@@ -276,6 +304,7 @@ export function rotateRunBoardAfterRun() {
 
   G.hub.currentRunId = G.hub.activeRuns.length ? G.hub.activeRuns[0].id : null;
   pruneRunIntelCache(G.hub.activeRuns.map((run) => run.id));
+  saveHubState();
 }
 
 function createContact(wave) {
@@ -336,6 +365,7 @@ export function maybeGrantContactFromMainTerminal(wave) {
   const contact = createContact(wave);
   G.hub.contacts.push(contact);
   G.hub.lastContactDropId = contact.id;
+  saveHubState();
   return contact;
 }
 
@@ -353,6 +383,7 @@ export function ensureDebugContacts(count, wave = G.wave || 1) {
     G.hub.contacts.push(createContact(wave));
   }
 
+  saveHubState();
   return G.hub.contacts;
 }
 
@@ -363,11 +394,18 @@ export function getCrew() {
 
 export function getSelectedCrewMember() {
   ensureHubState();
-  if (!G.hub.selectedOperatorId) {
+  if (!G.hub.crew.length) {
     return null;
   }
 
-  return G.hub.crew.find((member) => member.id === G.hub.selectedOperatorId) || null;
+  const selected = G.hub.crew.find((member) => member.id === G.hub.selectedOperatorId) || null;
+  if (selected) {
+    return selected;
+  }
+
+  G.hub.selectedOperatorId = G.hub.crew[0].id;
+  saveHubState();
+  return G.hub.crew[0] || null;
 }
 
 export function setSelectedCrewMember(crewId) {
@@ -379,12 +417,14 @@ export function setSelectedCrewMember(crewId) {
   }
 
   G.hub.selectedOperatorId = crewId;
+  saveHubState();
   return { success: true, message: 'Operator przypisany do runu.' };
 }
 
 export function markRunStarted(crewId) {
   ensureHubState();
-  const chosen = crewId || G.hub.selectedOperatorId;
+  const fallbackCrew = getSelectedCrewMember();
+  const chosen = crewId || fallbackCrew?.id || G.hub.selectedOperatorId;
   const exists = G.hub.crew.some((member) => member.id === chosen);
 
   if (!exists) {
@@ -394,6 +434,7 @@ export function markRunStarted(crewId) {
   G.hub.selectedOperatorId = chosen;
   G.hub.activeOperatorId = chosen;
   G.hub.runResolved = false;
+  saveHubState();
   return { success: true, message: 'Run rozpoczęty.' };
 }
 
@@ -422,6 +463,8 @@ export function resolveRunFailure() {
     G.hub.selectedOperatorId = G.hub.crew.length ? G.hub.crew[0].id : null;
   }
 
+  saveHubState();
+
   return { ...tick, lostOperator };
 }
 
@@ -435,6 +478,7 @@ export function resolveRunSuccess() {
   const tick = processRunOutcome(true);
   G.hub.activeOperatorId = null;
   G.hub.runResolved = true;
+  saveHubState();
   return tick;
 }
 
@@ -464,6 +508,7 @@ export function startRecruitmentMission(contactId) {
   G.P.cr -= contact.requirements.creditsUpfront;
   contact.mission.status = 'active';
   contact.mission.progress = 0;
+  saveHubState();
   return { success: true, message: `Rozpoczęto łańcuch rekrutacyjny: ${contact.alias}.` };
 }
 
@@ -475,6 +520,7 @@ export function rejectContact(contactId) {
     return { success: false, message: 'Kontakt nie istnieje.' };
   }
 
+  saveHubState();
   return { success: true, message: 'Kontakt odrzucony.' };
 }
 
@@ -503,6 +549,8 @@ export function hireContact(contactId) {
     panicRisk: contact.panicRisk,
   });
   G.hub.contacts = G.hub.contacts.filter((item) => item.id !== contactId);
+
+  saveHubState();
 
   return { success: true, message: `${contact.alias} dołącza do ekipy.` };
 }
@@ -537,5 +585,6 @@ export function processRunOutcome(success) {
   });
 
   rotateRunBoardAfterRun();
+  saveHubState();
   return { removedAliases: removed };
 }

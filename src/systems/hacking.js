@@ -69,7 +69,6 @@ function addCtxSep() {
 
 export function showCtx(screenX, screenY, target, targetType) {
   announceTerminalOverlayFlow(targetType, target);
-  return;
 
   G.dom.contextButtons.innerHTML = '';
   G.dom.contextTitle.textContent = target.desc || targetType;
