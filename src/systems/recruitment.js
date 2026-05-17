@@ -1,4 +1,5 @@
 import { G } from '../core/state.js';
+import { pruneRunIntelCache } from './runIntel.js';
 
 const MAX_ACTIVE_RUNS = 4;
 
@@ -94,8 +95,12 @@ export function ensureHubState() {
     G.hub = {
       tab: 'plan',
       notoriety: 0,
+      walletCredits: 0,
+      debugBootstrapApplied: false,
       activeRuns: [],
       currentRunId: null,
+      activeRunMeta: null,
+      runIntelCache: {},
       runSerial: 1,
       contacts: [],
       crew: [],
@@ -108,11 +113,15 @@ export function ensureHubState() {
   if (!Array.isArray(G.hub.contacts)) G.hub.contacts = [];
   if (!Array.isArray(G.hub.crew)) G.hub.crew = [];
   if (!G.hub.tab) G.hub.tab = 'plan';
+  if (!Object.prototype.hasOwnProperty.call(G.hub, 'walletCredits')) G.hub.walletCredits = Number(G.P?.cr || 0);
+  if (!Object.prototype.hasOwnProperty.call(G.hub, 'debugBootstrapApplied')) G.hub.debugBootstrapApplied = false;
   if (!G.hub.runSerial) G.hub.runSerial = 1;
   if (!G.hub.contactSerial) G.hub.contactSerial = 1;
   if (!Object.prototype.hasOwnProperty.call(G.hub, 'selectedOperatorId')) G.hub.selectedOperatorId = null;
   if (!Object.prototype.hasOwnProperty.call(G.hub, 'activeOperatorId')) G.hub.activeOperatorId = null;
   if (!Object.prototype.hasOwnProperty.call(G.hub, 'runResolved')) G.hub.runResolved = false;
+  if (!Object.prototype.hasOwnProperty.call(G.hub, 'activeRunMeta')) G.hub.activeRunMeta = null;
+  if (!G.hub.runIntelCache || typeof G.hub.runIntelCache !== 'object') G.hub.runIntelCache = {};
 
   if (!G.quickHackCatalogOwned) {
     G.quickHackCatalogOwned = {
@@ -198,6 +207,9 @@ function createRunOffer() {
   const mapX = randInt(12, 88);
   const mapY = randInt(14, 86);
   const floorCount = 2 + ((Math.random() * 2) | 0); // 2-3 floors
+  const intelSeed = randInt(100000, 999999);
+  const intelHost = `${profile.id}-${intelSeed}.ops.gp`;
+  const intelDisinfoLevel = danger >= 8 ? 'high' : danger >= 5 ? 'medium' : 'low';
 
   return {
     id,
@@ -211,6 +223,9 @@ function createRunOffer() {
     profit,
     contactChance,
     floorCount,
+    intelSeed,
+    intelHost,
+    intelDisinfoLevel,
   };
 }
 
@@ -260,6 +275,7 @@ export function rotateRunBoardAfterRun() {
   }
 
   G.hub.currentRunId = G.hub.activeRuns.length ? G.hub.activeRuns[0].id : null;
+  pruneRunIntelCache(G.hub.activeRuns.map((run) => run.id));
 }
 
 function createContact(wave) {
@@ -325,6 +341,18 @@ export function maybeGrantContactFromMainTerminal(wave) {
 
 export function getContacts() {
   ensureHubState();
+  return G.hub.contacts;
+}
+
+export function ensureDebugContacts(count, wave = G.wave || 1) {
+  ensureHubState();
+  const target = Math.max(0, Number(count) || 0);
+  const missing = Math.max(0, target - G.hub.contacts.length);
+
+  for (let i = 0; i < missing; i += 1) {
+    G.hub.contacts.push(createContact(wave));
+  }
+
   return G.hub.contacts;
 }
 

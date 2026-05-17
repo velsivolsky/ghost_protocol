@@ -12,6 +12,36 @@ import { floatMsg, log, rebuildList, refreshHUD } from './ui.js';
 import { updateMissionText } from './mission.js';
 import { grantQuickHack } from './quickhacks.js';
 
+// Hack SFX paths - add more to cycle through them
+const HACK_SFX_PATHS = [
+  'assets/sfx/hack.wav',
+  // 'assets/sfx/hack2.wav',
+  // 'assets/sfx/hack3.wav',
+];
+let hackSfxIndex = 0;
+let hackSfxAudio = null;
+
+function playHackSfx() {
+  if (!G.audioEnabled) return;
+  try {
+    // Cycle to next SFX
+    const sfxPath = HACK_SFX_PATHS[hackSfxIndex];
+    hackSfxIndex = (hackSfxIndex + 1) % HACK_SFX_PATHS.length;
+    
+    if (!hackSfxAudio) {
+      hackSfxAudio = new Audio(sfxPath);
+      hackSfxAudio.preload = 'auto';
+      hackSfxAudio.volume = 0.6;
+    } else {
+      hackSfxAudio.src = sfxPath;
+    }
+    hackSfxAudio.currentTime = 0;
+    void hackSfxAudio.play();
+  } catch {
+    // Ignore SFX playback errors
+  }
+}
+
 export function closeCtx() {
   G.dom.contextMenu.style.display = 'none';
   G.ctxOpen = false;
@@ -38,6 +68,9 @@ function addCtxSep() {
 }
 
 export function showCtx(screenX, screenY, target, targetType) {
+  announceTerminalOverlayFlow(targetType, target);
+  return;
+
   G.dom.contextButtons.innerHTML = '';
   G.dom.contextTitle.textContent = target.desc || targetType;
 
@@ -207,7 +240,7 @@ export function handleCanvasClick(event) {
   }
 
   if (tile === TILE_TYPES.MAIN_TERMINAL) {
-    showCtx(event.clientX, event.clientY, G.mainTerminal, 'mainterm');
+    announceTerminalOverlayFlow('mainterm', G.mainTerminal);
     return;
   }
 
@@ -215,7 +248,7 @@ export function handleCanvasClick(event) {
     const terminal = G.sideTerminals[index];
 
     if (terminal.x === tileX && terminal.y === tileY) {
-      showCtx(event.clientX, event.clientY, terminal, 'sterm');
+      announceTerminalOverlayFlow('sterm', terminal);
       return;
     }
   }
@@ -224,17 +257,65 @@ export function handleCanvasClick(event) {
     const panel = G.wallTerminals[index];
 
     if (panel.x === tileX && panel.y === tileY) {
-      showCtx(event.clientX, event.clientY, panel, 'wterm');
+      announceTerminalOverlayFlow('wterm', panel);
       return;
     }
   }
 
   for (const device of G.devices) {
     if (Math.abs(device.x - worldX) < 0.8 && Math.abs(device.y - worldY) < 0.8) {
-      showCtx(event.clientX, event.clientY, device, device.type);
+      announceTerminalOverlayFlow(device.type, device);
       return;
     }
   }
+}
+
+function announceTerminalOverlayFlow(targetType, target) {
+  const id = String(target?.id || target?.networkName || targetType || 'target');
+  const inRange = dst(target, G.P) <= HACK_RANGE + 1.2;
+
+  if (!inRange) {
+    log(`Poza zasięgiem uplinku: ${id}. Podejdź bliżej i użyj TAB.`, 'w');
+    return;
+  }
+
+  const flow = getTerminalFlowHint(targetType, id, target);
+  log(`LIVE TERMINAL: TAB -> ${flow}`, 'ok');
+}
+
+function getTerminalFlowHint(targetType, id, target) {
+  if (targetType === 'cam') {
+    return `connect ${id} -> feed blind | feed loop`;
+  }
+
+  if (targetType === 'guard' || targetType === 'drone' || targetType === 'tech') {
+    return `connect ${id} -> set friendly | override | disable`;
+  }
+
+  if (targetType === 'sterm') {
+    return `connect ${id} -> breach firewall -> dump creds`;
+  }
+
+  if (targetType === 'wterm') {
+    return `connect ${id} -> unlock`;
+  }
+
+  if (targetType === 'mainterm') {
+    if (!G.mainTerminalAuth?.unlocked) {
+      return 'connect node_side_# -> breach firewall -> dump creds';
+    }
+    return 'connect node_main -> scp breach.sh -> source breach.sh';
+  }
+
+  if (targetType === 'distract') {
+    const nodeType = String(target?.nodeType || '').toLowerCase();
+    if (nodeType === 'vent') return `connect ${id} -> vent on | vent off`;
+    if (nodeType === 'lights' || nodeType === 'wallpanel') return `connect ${id} -> lights cut`;
+    if (nodeType === 'junction') return `connect ${id} -> junction overload`;
+    return `connect ${id} -> help distraction`;
+  }
+
+  return `connect ${id}`;
 }
 
 function hackCam(camera) {
@@ -248,6 +329,7 @@ function hackCam(camera) {
 
   camera.hacked = true;
   G.P.bw -= 15;
+  playHackSfx();
   raiseCameraInteractionAlert(5);
   log(`Kamera ${camera.id} zaślepiona`, 'ok');
   floatMsg('BLIND', camera, '#00ff9f');
@@ -266,6 +348,7 @@ function loopCam(camera) {
 
   camera.hacked = true;
   G.P.bw -= 8;
+  playHackSfx();
   raiseCameraInteractionAlert(2);
   log('Feed zapętlony', 'ok');
   floatMsg('LOOP', camera, '#0af');
@@ -289,6 +372,7 @@ export function overloadGuard(guard) {
   guard.dead = true;
   guard.bodyReported = false;
   G.P.bw -= 30;
+  playHackSfx();
   log('Implant przeciążony — strażnik down', 'ok');
   floatMsg('FLATLINED', guard, '#ff3a5c');
   rebuildList();
@@ -301,6 +385,7 @@ function blindGuard(guard) {
 
   guard.hacked = true;
   G.P.bw -= 15;
+  playHackSfx();
   G.alert = clamp(G.alert + 8);
   log('Cyberoczy zaślepione', 'ok');
   floatMsg('BLIND', guard, '#0af');
@@ -320,6 +405,7 @@ function redirectGuard(guard) {
   }
 
   G.P.bw -= 10;
+  playHackSfx();
   guard.patrol = [
     { x: 1, y: 1 },
     { x: MAP_W - 3, y: MAP_H - 3 },
@@ -340,6 +426,7 @@ export function hijackDrone(drone) {
   drone.hijacked = true;
   drone.hacked = true;
   G.P.bw -= 25;
+  playHackSfx();
   G.alert = clamp(G.alert + 10);
   log('Dron przejęty', 'ok');
   floatMsg('HIJACKED', drone, '#0af');
@@ -353,6 +440,7 @@ function killDrone(drone) {
 
   drone.dead = true;
   G.P.bw -= 20;
+  playHackSfx();
   G.alert = clamp(G.alert + 12);
   log('Dron wyłączony', 'ok');
   floatMsg('OFFLINE', drone, '#ffd700');
@@ -365,6 +453,7 @@ function hackSideTerm(terminal) {
   }
 
   G.P.bw -= 20;
+  playHackSfx();
   terminal.hacked = true;
   terminal.used = false;
 
@@ -522,6 +611,7 @@ function disableNearestCamera(terminal) {
   }
 
   camera.hacked = true;
+  playHackSfx();
   requestTechnician(camera);
   log(`Kamera ${camera.id} wyłączona z terminala`, 'ok');
   floatMsg('CAM OFF', camera, '#00ff9f');
@@ -545,6 +635,7 @@ function redirectNearestGuard(terminal) {
   guard.pi = 0;
   guard.aware = false;
   guard.alertT = 0;
+  playHackSfx();
   G.alert = clamp(G.alert + 5);
   log('Strażnik przekierowany', 'ok');
   floatMsg('REROUTE', guard, '#ffd700');
@@ -591,6 +682,7 @@ function disableTechnicians() {
   }
 
   G.P.bw -= 12;
+  playHackSfx();
   G.techDisabled = true;
   log('Technicy wyłączeni z sieci', 'ok');
   floatMsg('TECH OFF', G.P, '#ffd700');
@@ -605,6 +697,7 @@ function eliminateTechnician(technician) {
   technician.dead = true;
   technician.state = 'dead';
   G.P.bw -= 8;
+  playHackSfx();
   G.alert = clamp(G.alert + 6);
   log('Technik wyeliminowany', 'ok');
   floatMsg('OFFLINE', technician, '#c7d2ff');
@@ -622,6 +715,7 @@ function disableNearestDrone(terminal) {
   }
 
   drone.dead = true;
+  playHackSfx();
   G.alert = clamp(G.alert + 12);
   log('Dron wyłączony z terminala', 'ok');
   floatMsg('DRONE OFF', drone, '#ffd700');

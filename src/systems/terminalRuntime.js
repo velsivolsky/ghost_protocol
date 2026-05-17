@@ -58,25 +58,117 @@ const COMMAND_HEAT_COSTS = {
   crash: 18,
 };
 
+const COMMAND_BW_COSTS = {
+  scan_local: 2,
+  scan_network: 4,
+  breach_firewall: 10,
+  dump_creds: 5,
+  download_map: 6,
+  download_hack: 7,
+  transfer_credits: 6,
+  scp: 5,
+  source: 8,
+  feed_blind: 7,
+  feed_loop: 4,
+  unlock: 3,
+  elevator_unlock: 3,
+  trigger_vent: 3,
+  vent_off: 1,
+  cut_lights: 4,
+  trip_panel: 4,
+  deploy: 6,
+  override: 7,
+  set_friendly: 6,
+  disable: 7,
+  blackout: 8,
+  mirror: 4,
+  blind: 6,
+  cripple: 6,
+  slow: 5,
+  crash: 7,
+  ddos: 10,
+};
+
+const TERMINAL_ARCHETYPES = [
+  {
+    id: 'balanced',
+    name: 'BALANCED BACKBONE',
+    economy: { heatMult: 1, traceMult: 1, latencyMs: 0, bwMult: 1, rewardMult: 1 },
+  },
+  {
+    id: 'cold_mesh',
+    name: 'COLD MESH',
+    economy: { heatMult: 0.82, traceMult: 0.86, latencyMs: -40, bwMult: 0.9, rewardMult: 0.9 },
+  },
+  {
+    id: 'noisy_backbone',
+    name: 'NOISY BACKBONE',
+    economy: { heatMult: 1.25, traceMult: 1.2, latencyMs: 85, bwMult: 1.1, rewardMult: 1.25 },
+  },
+  {
+    id: 'brittle_ice',
+    name: 'BRITTLE ICE FABRIC',
+    economy: { heatMult: 1.1, traceMult: 1.36, latencyMs: 45, bwMult: 1, rewardMult: 1.35 },
+  },
+];
+
+const META_OBJECTIVES = [
+  {
+    id: 'stealth_chain',
+    title: 'META: STEALTH CHAIN',
+    desc: 'Run stealth commands to stabilize ingress.',
+    target: 3,
+    rewardCredits: 140,
+    rewardType: 'trace',
+    matches: ['spoof', 'mask_trace', 'ghost'],
+  },
+  {
+    id: 'shard_hunter',
+    title: 'META: SHARD HUNTER',
+    desc: 'Extract auth shards from side terminals.',
+    target: 2,
+    rewardCredits: 180,
+    rewardType: 'bandwidth',
+    matches: ['dump_creds'],
+  },
+  {
+    id: 'quiet_locksmith',
+    title: 'META: QUIET LOCKSMITH',
+    desc: 'Open routes through terminal control.',
+    target: 3,
+    rewardCredits: 120,
+    rewardType: 'credits',
+    matches: ['unlock', 'elevator_unlock'],
+  },
+];
+
 export function initTerminalRuntime() {
   if (!G.terminalRuntime || !G.dom.terminalOverlay) {
     return;
   }
 
   const input = G.dom.terminalInput;
-  if (!input || input.dataset.boundRealtimeTerminal === '1') {
+  if (!input) {
     return;
   }
 
-  input.dataset.boundRealtimeTerminal = '1';
-  input.addEventListener('keydown', handleTerminalInputKeyDown);
-  input.addEventListener('input', () => {
-    G.terminalRuntime.inputBuffer = input.value;
-    syncTerminalHints();
-  });
+  if (input.dataset.boundRealtimeTerminal !== '1') {
+    input.dataset.boundRealtimeTerminal = '1';
+    input.addEventListener('keydown', handleTerminalInputKeyDown);
+    input.addEventListener('input', () => {
+      G.terminalRuntime.inputBuffer = input.value;
+      syncTerminalHints();
+    });
+  }
 
-  pushTerminalLine('link stack primed. press TAB to open/close terminal.', 'sys');
-  pushTerminalLine("type 'tutorial' for a quick walkthrough", 'sys');
+  if (!G.terminalRuntime.bootLineShown) {
+    pushTerminalLine('link stack primed. press TAB to open/close terminal.', 'sys');
+    pushTerminalLine("type 'tutorial' for a quick walkthrough", 'sys');
+    ensureTerminalDirectives();
+    emitTerminalDirectiveBootLine();
+    G.terminalRuntime.bootLineShown = true;
+  }
+
   syncTerminalOverlay();
 }
 
@@ -111,6 +203,8 @@ export function resetTerminalRuntime() {
   G.terminalRuntime.outputRevision = 0;
   G.terminalRuntime.tutorialShown = false;
   G.terminalRuntime.scanHighlights = [];
+  G.terminalRuntime.bootLineShown = false;
+  G.terminalRuntime.systemDirectiveShown = false;
   G.terminalRuntime.mainPayloadUploaded = false;
   G.traceRuntime.value = 0;
   G.traceRuntime.velocity = 0;
@@ -413,8 +507,36 @@ function queueTerminalCommand(rawInput) {
   }
 
   const target = resolveConnectedTarget();
-  const latency = def.latencyMs + (G.terminalRuntime.responseDelayMs || 0) + getTerminalHeatPenaltyMs();
+  ensureTerminalDirectives();
+
+  const economy = G.terminalRuntime.economy || { heatMult: 1, traceMult: 1, latencyMs: 0, bwMult: 1 };
+  const heatCost = Math.max(0, Math.round(getCommandHeatCost(parsed.commandId) * (economy.heatMult || 1)));
+  const traceCost = Math.max(0, (def.noise || 0) * 0.45 * (economy.traceMult || 1));
+  const bwCost = Math.max(0, Math.round(getCommandBwCost(parsed.commandId) * (economy.bwMult || 1)));
+
+  if ((G.P?.bw || 0) < bwCost) {
+    pushTerminalLine(`insufficient BW for ${parsed.commandId} (need ${bwCost})`, 'warn');
+    return;
+  }
+
+  if (bwCost > 0 && G.P) {
+    G.P.bw = Math.max(0, G.P.bw - bwCost);
+    refreshHUD();
+  }
+
+  const latency =
+    def.latencyMs +
+    (G.terminalRuntime.responseDelayMs || 0) +
+    getTerminalHeatPenaltyMs() +
+    Math.round(economy.latencyMs || 0);
   const scrambleActive = performance.now() < (G.terminalRuntime.scrambleUntil || 0);
+
+  pushCommandTelemetryLine(parsed.commandId, {
+    heat: heatCost,
+    trace: traceCost,
+    bw: bwCost,
+    latency,
+  });
 
   G.terminalRuntime.pendingCommand = {
     commandId: parsed.commandId,
@@ -423,14 +545,18 @@ function queueTerminalCommand(rawInput) {
     target,
     remainingMs: latency,
     scrambled: scrambleActive && def.id !== 'help',
+    telemetry: { heat: heatCost, trace: traceCost, bw: bwCost, latency },
   };
 
-  addTerminalHeat(getCommandHeatCost(parsed.commandId), parsed.commandId);
+  addTerminalHeat(heatCost, parsed.commandId);
 
   G.terminalRuntime.commandCooldownMs = 120;
-  if (def.noise > 0) {
-    addTrace(def.noise * 0.45, parsed.commandId);
+  if (traceCost > 0) {
+    addTrace(traceCost, parsed.commandId);
   }
+
+  trackMetaObjectiveProgress(parsed.commandId);
+  applyAICounterreaction(parsed.commandId, target);
 }
 
 function resolveCommandExecution(pending) {
@@ -834,7 +960,7 @@ function runTransferCredits(target) {
 }
 
 function runDumpCreds(target) {
-  const side = requireSideTerminalTarget(target, 'dump creds', { requireAuthExtracted: false });
+  const side = requireSideTerminalTarget(target, 'dump creds', { requireAuthExtracted: false, allowConsumed: true });
   if (!side) {
     return false;
   }
@@ -905,7 +1031,7 @@ function runBreachFirewall(target) {
 }
 
 function requireSideTerminalTarget(target, commandLabel, options = {}) {
-  const { requireOpenFirewall = true, requireAuthExtracted = true } = options;
+  const { requireOpenFirewall = true, requireAuthExtracted = true, allowConsumed = false } = options;
 
   if (!target || target.type !== 'sterm') {
     pushTerminalLine(`${commandLabel} requires connected side terminal node`, 'warn');
@@ -913,9 +1039,13 @@ function requireSideTerminalTarget(target, commandLabel, options = {}) {
     return null;
   }
 
-  if (target.ref?.used) {
+  if (target.ref?.used && !allowConsumed) {
     pushTerminalLine(`terminal already consumed: ${target.id}`, 'warn');
     return null;
+  }
+
+  if (target.ref?.used && allowConsumed) {
+    pushTerminalLine('payload spent, credential cache still readable.', 'dim');
   }
 
   if (requireOpenFirewall && target.ref?.requiresFirewall && !target.ref?.firewallBreached) {
@@ -2411,6 +2541,10 @@ function getCommandHeatCost(commandId) {
   return COMMAND_HEAT_COSTS[commandId] ?? 8;
 }
 
+function getCommandBwCost(commandId) {
+  return COMMAND_BW_COSTS[commandId] ?? 0;
+}
+
 function getTerminalHeatStateLabel() {
   if (!G.terminalRuntime) {
     return 'NORMAL';
@@ -2484,6 +2618,224 @@ function runAutoConnectGuard(guardId) {
   pushTerminalLine(`uplink nawiazany -> ${guardId} [GUARD]`, 'ok');
   pushTerminalLine(`podlaczono: ${guard.desc || guardId}`, 'sys');
   pushTerminalLine('dostepne hacki: blind | cripple | ddos | slow | crash', 'dim');
+}
+
+function ensureTerminalDirectives() {
+  if (!G.terminalRuntime) {
+    return;
+  }
+
+  if (!G.terminalRuntime.archetypeId) {
+    G.terminalRuntime.archetypeId = 'balanced';
+  }
+
+  const shouldPickArchetype =
+    !G.terminalRuntime.archetypeName ||
+    !G.terminalRuntime.economy ||
+    G.terminalRuntime.archetypeId === 'balanced';
+
+  if (shouldPickArchetype) {
+    const weights = [
+      { id: 'balanced', w: 36 },
+      { id: 'cold_mesh', w: 24 },
+      { id: 'noisy_backbone', w: 24 },
+      { id: 'brittle_ice', w: 16 },
+    ];
+
+    const roll = Math.random() * weights.reduce((sum, item) => sum + item.w, 0);
+    let acc = 0;
+    let pickedId = 'balanced';
+    for (const item of weights) {
+      acc += item.w;
+      if (roll <= acc) {
+        pickedId = item.id;
+        break;
+      }
+    }
+
+    const picked = TERMINAL_ARCHETYPES.find((item) => item.id === pickedId) || TERMINAL_ARCHETYPES[0];
+    G.terminalRuntime.archetypeId = picked.id;
+    G.terminalRuntime.archetypeName = picked.name;
+    G.terminalRuntime.economy = { ...picked.economy };
+  }
+
+  const meta = G.terminalRuntime.metaObjective;
+  if (!meta || !meta.id || meta.id === 'none') {
+    const picked = META_OBJECTIVES[(Math.random() * META_OBJECTIVES.length) | 0] || META_OBJECTIVES[0];
+    G.terminalRuntime.metaObjective = {
+      id: picked.id,
+      title: picked.title,
+      desc: picked.desc,
+      target: picked.target,
+      progress: 0,
+      rewardCredits: picked.rewardCredits,
+      rewardType: picked.rewardType,
+      completed: false,
+      matches: [...picked.matches],
+    };
+  }
+}
+
+function emitTerminalDirectiveBootLine() {
+  const runtime = G.terminalRuntime;
+  if (!runtime || runtime.systemDirectiveShown) {
+    return;
+  }
+
+  const eco = runtime.economy || {};
+  const heatPct = Math.round(((eco.heatMult || 1) - 1) * 100);
+  const tracePct = Math.round(((eco.traceMult || 1) - 1) * 100);
+  const latency = Math.round(eco.latencyMs || 0);
+  pushTerminalLine(`node archetype: ${runtime.archetypeName}`, 'sys');
+  pushTerminalLine(
+    `economy profile -> heat ${heatPct >= 0 ? '+' : ''}${heatPct}% | trace ${tracePct >= 0 ? '+' : ''}${tracePct}% | latency ${latency >= 0 ? '+' : ''}${latency}ms`,
+    'dim',
+  );
+
+  const meta = runtime.metaObjective;
+  if (meta && !meta.completed) {
+    pushTerminalLine(`${meta.title} (${meta.progress}/${meta.target})`, 'ok');
+    pushTerminalLine(`${meta.desc} reward: ¥${meta.rewardCredits}`, 'dim');
+  }
+
+  runtime.systemDirectiveShown = true;
+}
+
+function pushCommandTelemetryLine(commandId, telemetry) {
+  if (!G.terminalRuntime) {
+    return;
+  }
+
+  const snapshot = {
+    commandId,
+    heat: telemetry.heat,
+    trace: telemetry.trace,
+    bw: telemetry.bw,
+    latency: telemetry.latency,
+    at: performance.now(),
+  };
+  G.terminalRuntime.telemetryLast = snapshot;
+  pushTerminalLine(
+    `telemetry >> ${commandId} | heat +${snapshot.heat} | trace +${snapshot.trace.toFixed(1)} | bw -${snapshot.bw} | eta ${Math.ceil(snapshot.latency)}ms`,
+    'dim',
+  );
+}
+
+function trackMetaObjectiveProgress(commandId) {
+  if (!G.terminalRuntime) {
+    return;
+  }
+
+  const meta = G.terminalRuntime.metaObjective;
+  if (!meta || meta.completed || !Array.isArray(meta.matches)) {
+    return;
+  }
+
+  if (!meta.matches.includes(commandId)) {
+    return;
+  }
+
+  meta.progress = Math.min(meta.target, (meta.progress || 0) + 1);
+  pushTerminalLine(`${meta.title} progress ${meta.progress}/${meta.target}`, 'sys');
+
+  if (meta.progress < meta.target) {
+    return;
+  }
+
+  meta.completed = true;
+  const rewardMult = G.terminalRuntime?.economy?.rewardMult || 1;
+  const creditsReward = Math.round((meta.rewardCredits || 0) * rewardMult);
+  if (G.P) {
+    G.P.cr += creditsReward;
+  }
+
+  if (meta.rewardType === 'trace') {
+    softenTrace(12);
+  } else if (meta.rewardType === 'bandwidth' && G.P) {
+    G.P.bw = Math.min(G.P.mbw, G.P.bw + 16);
+  }
+
+  refreshHUD();
+  pushTerminalLine(`${meta.title} complete. reward issued: ¥${creditsReward}`, 'ok');
+}
+
+function applyAICounterreaction(commandId, target) {
+  if (!G.terminalRuntime) {
+    return;
+  }
+
+  const director = G.terminalRuntime.aiDirector || {
+    streakId: '',
+    streakCount: 0,
+    lastCommandAt: 0,
+    cameraOps: 0,
+    breachOps: 0,
+    counterLevel: 0,
+    lastCounterAt: 0,
+  };
+
+  const now = performance.now();
+  if (director.streakId === commandId && now - (director.lastCommandAt || 0) < 12000) {
+    director.streakCount += 1;
+  } else {
+    director.streakId = commandId;
+    director.streakCount = 1;
+  }
+  director.lastCommandAt = now;
+
+  if (commandId === 'feed_blind' || commandId === 'feed_loop') {
+    director.cameraOps += 1;
+  }
+
+  if (commandId === 'breach_firewall' || commandId === 'dump_creds' || commandId === 'source') {
+    director.breachOps += 1;
+  }
+
+  const cooldown = now - (director.lastCounterAt || 0);
+  if (director.streakCount >= 3 && cooldown > 7000) {
+    director.counterLevel += 1;
+    director.lastCounterAt = now;
+    G.terminalRuntime.responseDelayMs = Math.min(460, (G.terminalRuntime.responseDelayMs || 0) + 45);
+    addTerminalHeat(5, 'ai-adapt-repeat');
+    addTrace(2.1, 'ai-adapt-repeat');
+    pushTerminalLine('AI countermeasure: adaptive parser hardening engaged.', 'warn');
+  }
+
+  if (director.cameraOps >= 2 && cooldown > 9000) {
+    director.counterLevel += 1;
+    director.cameraOps = 0;
+    director.lastCounterAt = now;
+    addTrace(3.2, 'ai-cam-response');
+    G.alert = clamp((G.alert || 0) + 6, 0, 100);
+
+    const hackedCamera = byType('cam').find((cam) => cam.hacked);
+    const tech = byType('tech').find((item) => !item.dead && item.state === 'patrol');
+    if (hackedCamera && tech) {
+      tech.state = 'repair';
+      tech.targetId = hackedCamera.id;
+      tech.repairTimer = 0;
+      tech.repairDuration = 0;
+    }
+
+    pushTerminalLine('AI countermeasure: camera anomaly escalation -> technician dispatch.', 'warn');
+  }
+
+  if (director.breachOps >= 2 && cooldown > 9000) {
+    director.counterLevel += 1;
+    director.breachOps = 0;
+    director.lastCounterAt = now;
+    addTrace(2.7, 'ai-breach-response');
+    G.terminalRuntime.scrambleUntil = Math.max(G.terminalRuntime.scrambleUntil || 0, now + 7000);
+    G.terminalRuntime.falseOutputUntil = Math.max(G.terminalRuntime.falseOutputUntil || 0, now + 5000);
+    G.terminalRuntime.responseDelayMs = Math.min(500, (G.terminalRuntime.responseDelayMs || 0) + 60);
+    pushTerminalLine('AI countermeasure: ICE reinforcement pushed to active link.', 'warn');
+  }
+
+  G.terminalRuntime.aiDirector = director;
+
+  if (target?.type === 'sterm' && director.counterLevel >= 4) {
+    G.alert = clamp((G.alert || 0) + 2, 0, 100);
+  }
 }
 
 function runQuickHackOnTarget(hackId, target) {

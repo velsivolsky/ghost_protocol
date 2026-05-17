@@ -1,5 +1,6 @@
 import { G, upgradeHack } from '../core/state.js';
 import {
+  ensureHubState,
   getActiveRunOffers,
   getContacts,
   getCrew,
@@ -26,19 +27,88 @@ import {
   removeFragmentConnection,
   isDecryptorUnlocked,
   isFragmentDecrypted,
+  isFragmentMetadataScanned,
   isProbabilityUnlocked,
+  scanFragmentMetadata,
   getTotalFragmentCount,
+  unlockProbability,
+  unlockDecryptor,
 } from './dataFragments.js';
+import {
+  changeRunIntelDir,
+  ensureRunIntelForRun,
+  getRunIntelMark,
+  getRunIntelSummary,
+  listRunIntelDir,
+  normalizeIntelPath,
+  openRunIntelSession,
+  readRunIntelFile,
+  setRunIntelMark,
+} from './runIntel.js';
 
 let initialized = false;
 let stateMutatedCallback = () => {};
 let runStartCallback = () => ({ success: false, message: 'NO RUN START HANDLER' });
+
+function getWalletCredits() {
+  ensureHubState();
+  const hubCredits = Number(G.hub?.walletCredits);
+  if (Number.isFinite(hubCredits)) {
+    if (!G.P) {
+      G.P = {
+        x: 0,
+        y: 0,
+        hp: 100,
+        mhp: 100,
+        bw: 100,
+        mbw: 100,
+        cr: Math.max(0, hubCredits),
+      };
+    } else {
+      G.P.cr = Math.max(0, hubCredits);
+    }
+    return Math.max(0, hubCredits);
+  }
+
+  const playerCredits = Number(G.P?.cr);
+  if (Number.isFinite(playerCredits)) {
+    return Math.max(0, playerCredits);
+  }
+
+  return 0;
+}
+
+function setWalletCredits(nextCredits) {
+  ensureHubState();
+  const value = Math.max(0, Math.floor(Number(nextCredits) || 0));
+  G.hub.walletCredits = value;
+  if (!G.P) {
+    G.P = {
+      x: 0,
+      y: 0,
+      hp: 100,
+      mhp: 100,
+      bw: 100,
+      mbw: 100,
+      cr: value,
+    };
+  } else {
+    G.P.cr = value;
+  }
+  return value;
+}
 
 const terminalState = {
   history: [],
   historyIndex: 0,
   booted: false,
   locked: false,
+  intelShell: {
+    active: false,
+    runId: null,
+    cwd: '/',
+    host: '',
+  },
 };
 
 function getEls() {
@@ -46,6 +116,7 @@ function getEls() {
     output: document.getElementById('menu-terminal-output'),
     input: document.getElementById('menu-terminal-input'),
     status: document.getElementById('menu-terminal-status'),
+    prompt: document.querySelector('.menu-terminal-prompt'),
   };
 }
 
@@ -125,11 +196,10 @@ function resolveOperatorId(needle) {
 }
 
 function probLabel(prob) {
-  const pct = Math.round(prob * 100);
-  if (prob >= 0.75) return `LEGIT ${pct}%`;
-  if (prob >= 0.5) return `PARTIAL ${pct}%`;
-  if (prob >= 0.25) return `SUSPECT ${pct}%`;
-  return `FALSE ${pct}%`;
+  if (prob >= 0.75) return 'LEGIT';
+  if (prob >= 0.5) return 'PARTIAL';
+  if (prob >= 0.25) return 'SUSPECT';
+  return 'FALSE';
 }
 
 function formatQuickHackOwnedStatus(id) {
@@ -145,14 +215,23 @@ function formatQuickHackOwnedStatus(id) {
 }
 
 function refreshStatusLine() {
-  const { status } = getEls();
+  const { status, prompt } = getEls();
   if (!status) return;
-  const credits = G.P?.cr ?? 0;
+  const credits = getWalletCredits();
   const wave = G.wave || 1;
   const notoriety = G.hub?.notoriety || 0;
   const collected = getCollectedFragments().length;
   const total = getTotalFragmentCount();
   status.textContent = `W${wave}  ¥${credits}  REP:${notoriety}  DF:${collected}/${total}`;
+
+  if (prompt) {
+    if (terminalState.intelShell.active && terminalState.intelShell.host) {
+      const cwd = terminalState.intelShell.cwd || '/';
+      prompt.textContent = `root@${terminalState.intelShell.host}:${cwd}$`;
+    } else {
+      prompt.textContent = 'root@gp://$';
+    }
+  }
 }
 
 function printBootBanner() {
@@ -235,8 +314,11 @@ function renderHelpMarketplace() {
   appendLine('market                       -> market overview', 'dim');
   appendLine('market list qh               -> quickhack catalog + IDs + charges', 'dim');
   appendLine('market list breach           -> breach action catalog + IDs', 'dim');
+  appendLine('market list tools            -> scanner/decryptor status', 'dim');
   appendLine('buy qh <#|id>                -> unlock quickhack item', 'dim');
   appendLine('buy breach <#|id>            -> unlock breach action', 'dim');
+  appendLine('buy scanner                  -> install metadata scanner', 'dim');
+  appendLine('buy decryptor                -> install decryptor v1', 'dim');
   appendLine('upgrade hack <#|id>          -> upgrade owned breach hack', 'dim');
 }
 
@@ -253,7 +335,7 @@ function renderHelpDf() {
   appendLine('df list                      -> collected fragments', 'dim');
   appendLine('df show <#|id>               -> inspect fragment', 'dim');
   appendLine('df decrypt <#|id>            -> decrypt fragment', 'dim');
-  appendLine('df verify <#|id>             -> verify legitimacy', 'dim');
+  appendLine('df verify <#|id>             -> scan metadata + verify legitimacy', 'dim');
   appendLine('df connect <#|id> <#|id>     -> link two fragments', 'dim');
   appendLine('df disconnect <#|id> <#|id>  -> remove link', 'dim');
   appendLine('df stats                     -> collection stats', 'dim');
@@ -287,15 +369,33 @@ async function cmdHelp(args) {
     return;
   }
 
+  if (topic === 'intel' || topic === 'ssh') {
+    section('HELP // INTEL SHELL');
+    appendLine('hosts                 -> list available intel hosts', 'dim');
+    appendLine('intel                 -> list runs with hosts', 'dim');
+    appendLine('intel run <#|id>      -> set run context for ssh', 'dim');
+    appendLine('ssh <host|#|id>       -> connect to intel server', 'dim');
+    appendLine('TAB autocomplete      -> host name for ssh', 'dim');
+    appendLine('after ssh TAB         -> paths for cd/ls/cat/intel mark', 'dim');
+    appendLine('ls [-la] [path]       -> list directory', 'dim');
+    appendLine('cd <path>             -> change directory', 'dim');
+    appendLine('pwd                   -> print current directory', 'dim');
+    appendLine('cat <file>            -> read intel file', 'dim');
+    appendLine('intel mark <file> <verified|suspicious|clear>', 'dim');
+    appendLine('exit                  -> leave intel shell context', 'dim');
+    appendLine('intel summary         -> intel usage stats for current run', 'dim');
+    return;
+  }
+
   section('AVAILABLE NETWORK FUNCTIONS');
   appendLine('help | help crew | help runs | help marketplace', 'dim');
-  appendLine('help loadout | help df', 'dim');
+  appendLine('help loadout | help df | help intel', 'dim');
   appendLine('whoami | status | wallet | history | clear', 'dim');
   appendLine('LIVE RUN NOTE: side terminals may require breach firewall before dump creds', 'dim');
   appendLine('LIVE RUN NOTE: unlock elevator on main terminal after collecting auth shards', 'dim');
   sep();
   section('INTEL');
-  appendLine('runs | run list | run show <#|id>', 'dim');
+  appendLine('runs | run list | run show <#|id> | hosts', 'dim');
   appendLine('crew | crew select <#|id|alias> | contacts', 'dim');
   appendLine('loadout qh | loadout breach', 'dim');
   sep();
@@ -305,12 +405,545 @@ async function cmdHelp(args) {
   appendLine('equip qh <#|id> <slot> | equip breach <#|id> <slot>', 'dim');
   sep();
   section('MARKETPLACE');
-  appendLine('market | market list qh | market list breach', 'dim');
-  appendLine('buy qh <#|id> | buy breach <#|id> | upgrade hack <#|id>', 'dim');
+  appendLine('market | market list qh | market list breach | market list tools', 'dim');
+  appendLine('buy qh <#|id> | buy breach <#|id> | buy scanner | buy decryptor', 'dim');
+  appendLine('upgrade hack <#|id>', 'dim');
   sep();
   section('DATA FRAGMENTS');
   appendLine('df list | df show <#|id> | df decrypt <#|id> | df verify <#|id>', 'dim');
   appendLine('df connect <#|id> <#|id> | df disconnect <#|id> <#|id> | df stats', 'dim');
+  sep();
+  section('INTEL SHELL');
+  appendLine('hosts | intel | intel run <#|id> | ssh <host|#|id>', 'dim');
+  appendLine('ls | ls -la | cd | pwd | cat | intel mark | exit | intel summary', 'dim');
+}
+
+function getIntelEnabledRuns() {
+  const toRecruitRunId = (contactId) => {
+    const raw = String(contactId || '');
+    const tail = raw.match(/(\d+)$/);
+    return `rc-${tail ? tail[1] : raw.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'x'}`;
+  };
+
+  const normalRuns = getActiveRunOffers();
+  const recruitRuns = (getContacts() || [])
+    .filter((contact) => contact?.mission?.status === 'ready' || contact?.mission?.status === 'intel')
+    .map((contact) => {
+      const risk = String(contact?.risk || '').toLowerCase();
+      const danger = risk === 'hardcore' ? 10 : risk === 'hard' ? 8 : risk === 'medium' ? 5 : 2;
+      const security = risk === 'hardcore' ? 82 : risk === 'hard' ? 64 : risk === 'medium' ? 46 : 28;
+      const recruitRunId = toRecruitRunId(contact.id);
+
+      return {
+        id: recruitRunId,
+        typeId: 'recruit',
+        typeName: contact.alias || 'KONTAKT',
+        target: contact.specialization || 'Rekrutacja operatora',
+        danger,
+        security,
+        floorCount: 1,
+        recruit: true,
+        contact,
+        intelHost: `${recruitRunId}.ops.gp`,
+      };
+    });
+
+  return [...normalRuns, ...recruitRuns];
+}
+
+function printIntelHostsList() {
+  const runs = getIntelEnabledRuns();
+  if (!runs.length) {
+    commandWarn('NO RUN OFFERS ONLINE');
+    return;
+  }
+
+  sep();
+  appendLine('#  RUN_ID    HOST                        DANGER  SECURITY', 'system');
+  sep();
+  runs.forEach((run, index) => {
+    const host = run.intelHost || `intel-${run.id}.ops.gp`;
+    appendLine(`${String(index + 1).padStart(2)} ${run.id.padEnd(9)} ${host.padEnd(27)} ${String(run.danger).padStart(2)}      ${String(run.security).padStart(3)}%`, 'info');
+  });
+  sep();
+  appendLine('connect with: ssh <host|#|id>', 'dim');
+}
+
+async function cmdHosts() {
+  printIntelHostsList();
+}
+
+function resolveRunByIdOrIndex(raw) {
+  const runs = getIntelEnabledRuns();
+  const runId = resolveIdFromList(raw, runs, (item) => item.id);
+  if (!runId) {
+    return null;
+  }
+
+  return runs.find((run) => run.id === runId) || null;
+}
+
+function resolveRunByHost(rawHost) {
+  const token = normalizeToken(rawHost);
+  if (!token) {
+    return null;
+  }
+
+  const runs = getIntelEnabledRuns();
+  const byHost = runs.find((run) => {
+    const host = run.intelHost || `intel-${run.id}.ops.gp`;
+    return normalizeToken(host) === token;
+  });
+  if (byHost) {
+    return byHost;
+  }
+
+  return resolveRunByIdOrIndex(rawHost);
+}
+
+function getSshAutocompleteHosts() {
+  const runs = getIntelEnabledRuns();
+  const seen = new Set();
+  const hosts = [];
+
+  const pushHost = (value) => {
+    const host = String(value || '').trim();
+    const key = normalizeToken(host);
+    if (!key || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    hosts.push(host);
+  };
+
+  if (terminalState.intelShell.host) {
+    pushHost(terminalState.intelShell.host);
+  }
+
+  runs.forEach((run) => {
+    pushHost(run.intelHost || `intel-${run.id}.ops.gp`);
+  });
+
+  return hosts;
+}
+
+function formatLsTimestamp() {
+  const now = new Date();
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[now.getMonth()] || 'Jan';
+  const day = String(now.getDate()).padStart(2, ' ');
+  const hour = String(now.getHours()).padStart(2, '0');
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  return `${month} ${day} ${hour}:${minute}`;
+}
+
+function formatLsEntryLine(entry, fileSize = 0, displayName = '') {
+  const perms = entry.type === 'dir' ? 'drwxr-xr-x' : '-rw-r--r--';
+  const size = String(fileSize).padStart(6, ' ');
+  const stamp = formatLsTimestamp();
+  const name = displayName || entry.name;
+  return `${perms} 1 root root ${size} ${stamp} ${name}`;
+}
+
+function getLsEntrySize(intel, entry) {
+  if (entry.type === 'file') {
+    return String(intel?.files?.[entry.path] || '').length;
+  }
+  return 4096;
+}
+
+function toLsBlocks(sizeBytes) {
+  return Math.max(1, Math.ceil(Number(sizeBytes || 0) / 1024));
+}
+
+function parseLsArgs(args = []) {
+  const state = {
+    showAll: false,
+    path: '.',
+    error: null,
+  };
+
+  for (const tokenRaw of args) {
+    const token = String(tokenRaw || '').trim();
+    if (!token) {
+      continue;
+    }
+
+    if (token.startsWith('-')) {
+      for (const flag of token.slice(1)) {
+        if (flag === 'a') {
+          state.showAll = true;
+          continue;
+        }
+        if (flag === 'l') {
+          continue;
+        }
+        state.error = `UNKNOWN OPTION: -${flag}`;
+        return state;
+      }
+      continue;
+    }
+
+    if (state.path !== '.') {
+      state.error = 'USAGE: ls [-la] [path]';
+      return state;
+    }
+
+    state.path = token;
+  }
+
+  return state;
+}
+
+function getIntelPathSuggestions(run, cwd, typedPath, mode = 'any') {
+  const rawPath = String(typedPath || '');
+  const hasLeadingSlash = rawPath.startsWith('/');
+  const slashIndex = rawPath.lastIndexOf('/');
+  const hasSeparator = slashIndex !== -1;
+  const parentRaw = hasSeparator ? rawPath.slice(0, slashIndex + 1) : '.';
+  const prefix = hasSeparator ? rawPath.slice(slashIndex + 1) : rawPath;
+
+  const listed = listRunIntelDir(run, cwd, parentRaw || '.');
+  if (!listed.ok) {
+    return [];
+  }
+
+  const normalizedPrefix = normalizeToken(prefix);
+  const filtered = listed.entries.filter((entry) => {
+    if (mode === 'dir' && entry.type !== 'dir') {
+      return false;
+    }
+    if (mode === 'file' && entry.type !== 'file') {
+      return false;
+    }
+
+    return normalizeToken(entry.name).startsWith(normalizedPrefix);
+  });
+
+  return filtered.map((entry) => {
+    if (hasLeadingSlash) {
+      return entry.path;
+    }
+
+    if (!hasSeparator || parentRaw === '.') {
+      return entry.name;
+    }
+
+    return `${parentRaw}${entry.name}`;
+  });
+}
+
+function resolveIntelShellAutocomplete(raw) {
+  if (!terminalState.intelShell.active) {
+    return null;
+  }
+
+  const run = getIntelRun();
+  if (!run) {
+    return null;
+  }
+
+  const trimmed = String(raw || '').trimStart();
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const root = normalizeToken(parts[0]);
+
+  if (root === 'cd') {
+    const typedPath = parts[1] || '';
+    const suggestions = getIntelPathSuggestions(run, terminalState.intelShell.cwd, typedPath, 'dir');
+    if (suggestions[0]) {
+      return `cd ${suggestions[0]}`;
+    }
+  }
+
+  if (root === 'ls') {
+    const optionToken = parts[1] || '';
+    const hasOption = optionToken.startsWith('-');
+    const typedPath = hasOption ? (parts[2] || '') : (parts[1] || '');
+    const suggestions = getIntelPathSuggestions(run, terminalState.intelShell.cwd, typedPath, 'any');
+    if (suggestions[0]) {
+      return hasOption
+        ? `ls ${optionToken} ${suggestions[0]}`
+        : `ls ${suggestions[0]}`;
+    }
+  }
+
+  if (root === 'cat') {
+    const typedPath = parts[1] || '';
+    const suggestions = getIntelPathSuggestions(run, terminalState.intelShell.cwd, typedPath, 'file');
+    if (suggestions[0]) {
+      return `cat ${suggestions[0]}`;
+    }
+  }
+
+  if (root === 'intel' && normalizeToken(parts[1]) === 'mark') {
+    const typedPath = parts[2] || '';
+    const mark = parts[3] || '';
+    const suggestions = getIntelPathSuggestions(run, terminalState.intelShell.cwd, typedPath, 'file');
+    if (suggestions[0]) {
+      return `intel mark ${suggestions[0]}${mark ? ` ${mark}` : ''}`;
+    }
+  }
+
+  return null;
+}
+
+function getIntelRun() {
+  if (!terminalState.intelShell.runId) {
+    return getCurrentRunOffer() || null;
+  }
+
+  return getIntelEnabledRuns().find((run) => run.id === terminalState.intelShell.runId) || getCurrentRunOffer() || null;
+}
+
+function ensureIntelShellActive() {
+  if (!terminalState.intelShell.active || !terminalState.intelShell.runId) {
+    commandWarn('INTEL SHELL OFFLINE // use ssh <host|#|id>');
+    return false;
+  }
+
+  return true;
+}
+
+async function cmdIntel(args) {
+  const sub = normalizeToken(args?.[0]);
+
+  if (!sub) {
+    printIntelHostsList();
+    return;
+  }
+
+  if (sub === 'run') {
+    const target = args?.[1];
+    if (!target) {
+      commandWarn('USAGE: intel run <#|id>');
+      return;
+    }
+
+    const run = resolveRunByIdOrIndex(target);
+    if (!run) {
+      commandErr(`UNKNOWN TARGET: ${target}`);
+      return;
+    }
+
+    terminalState.intelShell.runId = run.id;
+    terminalState.intelShell.host = run.intelHost || `intel-${run.id}.ops.gp`;
+    terminalState.intelShell.cwd = '/';
+    commandOk(`INTEL TARGET SET: ${run.id} (${terminalState.intelShell.host})`);
+    appendLine(`next: ssh ${terminalState.intelShell.host}`, 'dim');
+    return;
+  }
+
+  if (sub === 'summary') {
+    const run = getIntelRun() || getCurrentRunOffer();
+    if (!run) {
+      commandWarn('NO RUN CONTEXT');
+      return;
+    }
+
+    const summary = getRunIntelSummary(run.id);
+    if (!summary.available) {
+      commandWarn('INTEL NOT GENERATED YET // connect via ssh first');
+      return;
+    }
+
+    sep();
+    section('INTEL SUMMARY');
+    appendLine(`run       ${run.id}`, 'info');
+    appendLine(`host      ${summary.host}`, 'info');
+    appendLine(`sessions  ${summary.sessions}`, 'info');
+    appendLine(`files     ${summary.filesRead}`, 'info');
+    appendLine(`signal    ${summary.signalReads}`, 'ok');
+    appendLine(`noise     ${summary.noiseReads}`, summary.noiseReads > summary.signalReads ? 'warn' : 'dim');
+    appendLine(`lore      ${summary.loreReads}`, 'dim');
+    appendLine(`verified  ${summary.verifiedMarks}`, 'ok');
+    appendLine(`suspect   ${summary.suspiciousMarks}`, 'warn');
+    sep();
+    return;
+  }
+
+  if (sub === 'mark') {
+    if (!ensureIntelShellActive()) {
+      return;
+    }
+
+    const run = getIntelRun();
+    if (!run) {
+      commandErr('RUN CONTEXT LOST');
+      return;
+    }
+
+    const target = args?.[1];
+    const mark = args?.[2];
+
+    if (!target || !mark) {
+      commandWarn('USAGE: intel mark <file> <verified|suspicious|clear>');
+      return;
+    }
+
+    const result = setRunIntelMark(run, terminalState.intelShell.cwd, target, mark);
+    if (!result.ok) {
+      commandErr(`MARK FAILED: ${result.path || target}`);
+      return;
+    }
+
+    const normalizedMark = result.mark === 'clear' ? 'clear' : result.mark;
+    appendLine(`mark ${normalizedMark} -> ${result.path}`, normalizedMark === 'verified' ? 'ok' : normalizedMark === 'suspicious' ? 'warn' : 'dim');
+    return;
+  }
+
+  commandWarn('USAGE: intel | intel run <#|id> | intel summary | intel mark <file> <verified|suspicious|clear>');
+}
+
+async function cmdSsh(args) {
+  const fallbackRun = getIntelRun();
+  const target = args?.[0]
+    || terminalState.intelShell.host
+    || terminalState.intelShell.runId
+    || fallbackRun?.intelHost
+    || fallbackRun?.id;
+  if (!target) {
+    commandWarn('USAGE: ssh <host|#|id>');
+    appendLine('hint: run "intel" to list hosts or "intel run <#|id>" first', 'dim');
+    return;
+  }
+
+  const run = resolveRunByHost(target);
+  if (!run) {
+    commandErr(`HOST NOT FOUND: ${target}`);
+    return;
+  }
+
+  await preambleConnect();
+  openRunIntelSession(run, 'menu-terminal');
+  terminalState.intelShell.active = true;
+  terminalState.intelShell.runId = run.id;
+  terminalState.intelShell.host = run.intelHost || `intel-${run.id}.ops.gp`;
+  terminalState.intelShell.cwd = '/';
+
+  commandOk(`CONNECTED ${terminalState.intelShell.host}`);
+  appendLine('use ls/cd/cat/pwd, type exit to disconnect', 'dim');
+}
+
+async function cmdLs(args) {
+  if (!ensureIntelShellActive()) {
+    return;
+  }
+
+  const run = getIntelRun();
+  if (!run) {
+    commandErr('RUN CONTEXT LOST');
+    terminalState.intelShell.active = false;
+    return;
+  }
+
+  const parsed = parseLsArgs(args);
+  if (parsed.error) {
+    commandWarn(parsed.error);
+    return;
+  }
+
+  const target = parsed.path || '.';
+  const listed = listRunIntelDir(run, terminalState.intelShell.cwd, target);
+  if (!listed.ok) {
+    commandErr(`PATH ERROR: ${listed.path || target}`);
+    return;
+  }
+
+  const intel = ensureRunIntelForRun(run);
+  const ordered = [...listed.entries].sort((a, b) => a.name.localeCompare(b.name));
+  const dotEntries = parsed.showAll
+    ? [
+      { name: '.', path: listed.path, type: 'dir', dotName: '.' },
+      { name: '..', path: normalizeIntelPath(listed.path, '..'), type: 'dir', dotName: '..' },
+    ]
+    : [];
+  const renderEntries = [...dotEntries, ...ordered];
+  const totalBlocks = renderEntries.reduce((sum, entry) => {
+    return sum + toLsBlocks(getLsEntrySize(intel, entry));
+  }, 0);
+
+  appendLine(`total ${totalBlocks}`, 'system');
+  renderEntries.forEach((entry) => {
+    const fileSize = getLsEntrySize(intel, entry);
+    appendLine(
+      formatLsEntryLine(entry, fileSize, entry.dotName || ''),
+      entry.type === 'dir' ? 'ok' : 'info',
+    );
+  });
+}
+
+async function cmdCd(args) {
+  if (!ensureIntelShellActive()) {
+    return;
+  }
+
+  const run = getIntelRun();
+  if (!run) {
+    commandErr('RUN CONTEXT LOST');
+    terminalState.intelShell.active = false;
+    return;
+  }
+
+  const target = args?.[0] || '/';
+  const changed = changeRunIntelDir(run, terminalState.intelShell.cwd, target);
+  if (!changed.ok) {
+    commandErr(`CD FAILED: ${target}`);
+    return;
+  }
+
+  terminalState.intelShell.cwd = changed.cwd;
+  appendLine(`cwd -> ${terminalState.intelShell.cwd}`, 'ok');
+}
+
+async function cmdPwd() {
+  if (!ensureIntelShellActive()) {
+    return;
+  }
+
+  appendLine(terminalState.intelShell.cwd, 'info');
+}
+
+async function cmdCat(args) {
+  if (!ensureIntelShellActive()) {
+    return;
+  }
+
+  const run = getIntelRun();
+  if (!run) {
+    commandErr('RUN CONTEXT LOST');
+    terminalState.intelShell.active = false;
+    return;
+  }
+
+  const target = args?.[0];
+  if (!target) {
+    commandWarn('USAGE: cat <file>');
+    return;
+  }
+
+  const previewPath = normalizeIntelPath(terminalState.intelShell.cwd, target);
+  const read = readRunIntelFile(run, terminalState.intelShell.cwd, target, 'menu-terminal');
+  if (!read.ok) {
+    commandErr(`CAT FAILED: ${previewPath}`);
+    return;
+  }
+
+  const mark = getRunIntelMark(run, terminalState.intelShell.cwd, target);
+  const markLabel = mark.ok ? mark.mark : 'none';
+
+  appendLine(`--- ${read.path} [${read.tag}] [mark:${markLabel}] ---`, 'system');
+  read.content.split('\n').forEach((line) => appendLine(line, 'info'));
+}
+
+async function cmdExit() {
+  if (!terminalState.intelShell.active) {
+    commandWarn('NO ACTIVE SHELL CONTEXT');
+    return;
+  }
+
+  terminalState.intelShell.active = false;
+  terminalState.intelShell.cwd = '/';
+  commandOk(`DISCONNECTED ${terminalState.intelShell.host || ''}`.trim());
 }
 
 async function cmdWhoami() {
@@ -341,7 +974,7 @@ async function cmdStatus() {
   const run = getCurrentRunOffer();
   const op = getSelectedCrewMember();
   sep();
-  appendLine(`WALLET     ¥${G.P?.cr ?? 0}`, 'ok');
+  appendLine(`WALLET     ¥${getWalletCredits()}`, 'ok');
   appendLine(`WAVE       ${G.wave || 1}`, 'info');
   appendLine(`NOTORIETY  ${G.hub?.notoriety || 0}`, 'info');
   appendLine(`RUN        ${run ? `${run.id} - ${run.typeName}` : 'NO ACTIVE RUN'}`, run ? 'info' : 'warn');
@@ -512,7 +1145,7 @@ async function cmdLoadout(args) {
 async function cmdMarket(args) {
   const sub = args[0];
   const type = args[1];
-  const credits = G.P?.cr ?? 0;
+  const credits = getWalletCredits();
 
   if (!sub) {
     sep();
@@ -537,7 +1170,15 @@ async function cmdMarket(args) {
       appendLine(`${String(index + 1).padStart(2)} ID:${action.id.padEnd(9)} ${action.name.padEnd(16)} ${value}`, cls);
     });
     sep();
-    appendLine('buy qh <id> | buy breach <id> | upgrade hack <id>', 'dim');
+    appendLine('TOOLS', 'system');
+    const scannerOwned = isProbabilityUnlocked();
+    const decryptorOwned = isDecryptorUnlocked();
+    const scannerState = scannerOwned ? 'OWNED' : credits >= 2000 ? '¥ 2000' : 'LOCKED';
+    const decryptorState = decryptorOwned ? 'OWNED' : credits >= 2500 ? '¥ 2500' : 'LOCKED';
+    appendLine(`01 ID:scanner   METADATA SCANNER      ${scannerState}`, scannerOwned ? 'dim' : credits >= 2000 ? 'info' : 'warn');
+    appendLine(`02 ID:decryptor DECRYPTOR v1          ${decryptorState}`, decryptorOwned ? 'dim' : credits >= 2500 ? 'info' : 'warn');
+    sep();
+    appendLine('buy qh <id> | buy breach <id> | buy scanner | buy decryptor | upgrade hack <id>', 'dim');
     return;
   }
 
@@ -576,7 +1217,21 @@ async function cmdMarket(args) {
     return;
   }
 
-  commandWarn('USAGE: market | market list qh | market list breach');
+  if (sub === 'list' && type === 'tools') {
+    const scannerOwned = isProbabilityUnlocked();
+    const decryptorOwned = isDecryptorUnlocked();
+    sep();
+    appendLine('#  ID         NAME               PRICE/STATE', 'system');
+    sep();
+    appendLine(`01 scanner    METADATA SCANNER   ${scannerOwned ? 'OWNED' : credits >= 2000 ? '¥2000' : `BRAKUJE ¥${2000 - credits}`}`, scannerOwned ? 'dim' : credits >= 2000 ? 'info' : 'warn');
+    appendLine('   Unlocks PROBABILITY labels in DATA BOARD fragments.', 'dim');
+    appendLine(`02 decryptor  DECRYPTOR v1       ${decryptorOwned ? 'OWNED' : credits >= 2500 ? '¥2500' : `BRAKUJE ¥${2500 - credits}`}`, decryptorOwned ? 'dim' : credits >= 2500 ? 'info' : 'warn');
+    appendLine('   Unlocks manual decryption for encrypted fragments.', 'dim');
+    sep();
+    return;
+  }
+
+  commandWarn('USAGE: market | market list qh | market list breach | market list tools');
 }
 
 async function cmdBuy(args) {
@@ -601,7 +1256,7 @@ async function cmdBuy(args) {
       return;
     }
     commandOk(`PURCHASED ${def.name} -¥${def.price || 0}`);
-    appendLine(`WALLET: ¥${G.P?.cr ?? 0}`, 'dim');
+    appendLine(`WALLET: ¥${setWalletCredits(G.P?.cr ?? getWalletCredits())}`, 'dim');
     stateMutatedCallback();
     return;
   }
@@ -624,12 +1279,50 @@ async function cmdBuy(args) {
       return;
     }
     commandOk(`PURCHASED ${def.name} -¥${def.price || 0}`);
-    appendLine(`WALLET: ¥${G.P?.cr ?? 0}`, 'dim');
+    appendLine(`WALLET: ¥${setWalletCredits(G.P?.cr ?? getWalletCredits())}`, 'dim');
     stateMutatedCallback();
     return;
   }
 
-  commandWarn('USAGE: buy qh <#|id> | buy breach <#|id>');
+  if (type === 'scanner' || type === 'metadata') {
+    const cost = 2000;
+    const credits = getWalletCredits();
+    if (isProbabilityUnlocked()) {
+      commandWarn('METADATA SCANNER ALREADY INSTALLED');
+      return;
+    }
+    if (credits < cost) {
+      commandErr(`INSUFFICIENT CREDITS // NEED ¥${cost}`);
+      return;
+    }
+    setWalletCredits(credits - cost);
+    unlockProbability();
+    commandOk(`PURCHASED METADATA SCANNER -¥${cost}`);
+    appendLine(`WALLET: ¥${getWalletCredits()}`, 'dim');
+    stateMutatedCallback();
+    return;
+  }
+
+  if (type === 'decryptor') {
+    const cost = 2500;
+    const credits = getWalletCredits();
+    if (isDecryptorUnlocked()) {
+      commandWarn('DECRYPTOR V1 ALREADY INSTALLED');
+      return;
+    }
+    if (credits < cost) {
+      commandErr(`INSUFFICIENT CREDITS // NEED ¥${cost}`);
+      return;
+    }
+    setWalletCredits(credits - cost);
+    unlockDecryptor();
+    commandOk(`PURCHASED DECRYPTOR V1 -¥${cost}`);
+    appendLine(`WALLET: ¥${getWalletCredits()}`, 'dim');
+    stateMutatedCallback();
+    return;
+  }
+
+  commandWarn('USAGE: buy qh <#|id> | buy breach <#|id> | buy scanner | buy decryptor');
 }
 
 async function cmdEquip(args) {
@@ -772,7 +1465,11 @@ async function cmdDf(args) {
     appendLine(`rarity      ${frag.rarity}`, frag.rarity === 'classified' ? 'err' : frag.rarity === 'rare' ? 'warn' : 'dim');
     appendLine(`paranoia    ${frag.paranoiaLevel}/5`, 'info');
     if (isProbabilityUnlocked()) {
-      appendLine(`legit       ${probLabel(frag.probability)}`, frag.probability >= 0.5 ? 'ok' : 'warn');
+      if (isFragmentMetadataScanned(id)) {
+        appendLine(`legit       ${probLabel(frag.probability)}`, frag.probability >= 0.5 ? 'ok' : 'warn');
+      } else {
+        appendLine('legit       NOT SCANNED (use df verify <id>)', 'dim');
+      }
     } else {
       appendLine('legit       LOCKED (METADATA SCANNER REQUIRED)', 'dim');
     }
@@ -836,6 +1533,8 @@ async function cmdDf(args) {
       commandErr('NODE ACCESS DENIED // METADATA SCANNER REQUIRED');
       return;
     }
+    appendLine('[metadata scan in progress...]', 'dim');
+    scanFragmentMetadata(id);
     appendLine(`VERIFY ${id}`, 'system');
     appendLine(`legit       ${probLabel(frag.probability)}`, frag.probability >= 0.5 ? 'ok' : 'warn');
     appendLine(`paranoia    ${frag.paranoiaLevel}/5`, 'info');
@@ -887,10 +1586,12 @@ async function cmdDf(args) {
     const frags = getCollectedFragments();
     const total = getTotalFragmentCount();
     const decrypted = frags.filter((f) => isFragmentDecrypted(f.id)).length;
+    const scanned = frags.filter((f) => isFragmentMetadataScanned(f.id)).length;
     sep();
     section('DF STATS');
     appendLine(`collected   ${frags.length}/${total}`, 'info');
     appendLine(`decrypted   ${decrypted}/${frags.length}`, 'info');
+    appendLine(`scanned     ${scanned}/${frags.length}`, 'info');
     appendLine(`scanner     ${isProbabilityUnlocked() ? 'ONLINE' : 'OFFLINE'}`, isProbabilityUnlocked() ? 'ok' : 'warn');
     appendLine(`decryptor   ${isDecryptorUnlocked() ? 'ONLINE' : 'OFFLINE'}`, isDecryptorUnlocked() ? 'ok' : 'warn');
     sep();
@@ -968,6 +1669,14 @@ const COMMANDS = {
   upgrade: { fn: cmdUpgrade, mutating: true },
   operator: { fn: cmdOperator, mutating: true },
   df: { fn: cmdDf, mutating: true },
+  hosts: { fn: cmdHosts },
+  intel: { fn: cmdIntel },
+  ssh: { fn: cmdSsh },
+  ls: { fn: cmdLs },
+  cd: { fn: cmdCd },
+  pwd: { fn: cmdPwd },
+  cat: { fn: cmdCat },
+  exit: { fn: cmdExit },
 
   ghost: { fn: cmdGhost, hidden: true },
   override: { fn: cmdOverride, hidden: true },
@@ -983,6 +1692,7 @@ const AUTOCOMPLETE_COMMANDS = [
   'help marketplace',
   'help loadout',
   'help df',
+  'help intel',
   'whoami',
   'history',
   'clear',
@@ -1003,8 +1713,11 @@ const AUTOCOMPLETE_COMMANDS = [
   'marketplace',
   'market list qh',
   'market list breach',
+  'market list tools',
   'buy qh ',
   'buy breach ',
+  'buy scanner',
+  'buy decryptor',
   'upgrade hack ',
   'equip qh ',
   'equip breach ',
@@ -1015,10 +1728,46 @@ const AUTOCOMPLETE_COMMANDS = [
   'df connect ',
   'df disconnect ',
   'df stats',
+  'hosts',
+  'intel',
+  'intel run ',
+  'intel summary',
+  'intel mark ',
+  'ssh ',
+  'ls',
+  'ls -la',
+  'ls -la ',
+  'cd ',
+  'pwd',
+  'cat ',
+  'exit',
 ];
 
 function resolveAutocomplete(currentValue) {
-  const input = normalizeToken(currentValue);
+  const raw = String(currentValue || '');
+
+  const intelSuggestion = resolveIntelShellAutocomplete(raw);
+  if (intelSuggestion) {
+    return intelSuggestion;
+  }
+
+  const sshInput = raw.trimStart();
+  if (normalizeToken(sshInput).startsWith('ssh')) {
+    const parts = sshInput.split(/\s+/).filter(Boolean);
+    if (parts.length <= 2) {
+      const hosts = getSshAutocompleteHosts();
+      if (hosts.length) {
+        const typedHost = parts[1] || '';
+        const typed = normalizeToken(typedHost);
+        const match = hosts.find((host) => normalizeToken(host).startsWith(typed));
+        if (match) {
+          return `ssh ${match}`;
+        }
+      }
+    }
+  }
+
+  const input = normalizeToken(raw);
   if (!input) return currentValue;
   const match = AUTOCOMPLETE_COMMANDS.find((cmd) => normalizeToken(cmd).startsWith(input));
   return match || currentValue;

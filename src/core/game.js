@@ -29,6 +29,7 @@ import {
 } from '../systems/networkBreach.js';
 import {
   ensureHubState,
+  ensureDebugContacts,
   getActiveRunOffers,
   getContacts,
   getCrew,
@@ -39,16 +40,164 @@ import {
   setSelectedCrewMember,
 } from '../systems/recruitment.js';
 import { loadDataFragments, isProbabilityUnlocked, unlockProbability, saveDataFragments, ensureDataFragmentState, isDecryptorUnlocked, unlockDecryptor } from '../systems/dataFragments.js';
+import { ensureDebugDataShards } from '../systems/dataFragments.js';
 import { renderDataBoard } from '../systems/ui.js';
 import { focusMenuTerminalInput, initMenuTerminal, syncMenuTerminalStatus } from '../systems/menuTerminal.js';
 import { initTerminalRuntime, resetTerminalRuntime } from '../systems/terminalRuntime.js';
 import { resetTutorialSession, startTutorialSession } from '../systems/tutorial.js';
+import { DEBUG_BOOTSTRAP } from '../debug/debugBootstrap.js';
+import {
+  changeRunIntelDir,
+  ensureRunIntelForRun,
+  getRunIntelMark,
+  getRunIntelSummary,
+  listRunIntelDir,
+  openRunIntelSession,
+  readRunIntelFile,
+  setRunIntelMark,
+} from '../systems/runIntel.js';
 
 let started = false;
 let pendingStart = { wave: 1, credits: 0 };
 let modalSelectedCrewId = null;
 
 let planSelectedRunId = null;
+let intelRunId = null;
+let intelCwd = '/';
+let intelSelectedPath = null;
+let intelHostPickerActive = false;
+let mainMenuClickSfxAudio = null;
+let mainMenuClickSfxBound = false;
+
+const INTEL_HOST_PICKER_VIEW = '__intel_host_picker__';
+const MAIN_MENU_CLICK_SFX_PATH = 'assets/sfx/button.wav';
+
+function playMainMenuClickSfx() {
+  if (!G.audioEnabled) return;
+
+  try {
+    if (!mainMenuClickSfxAudio) {
+      mainMenuClickSfxAudio = new Audio(MAIN_MENU_CLICK_SFX_PATH);
+      mainMenuClickSfxAudio.preload = 'auto';
+      mainMenuClickSfxAudio.volume = 0.5;
+    }
+
+    mainMenuClickSfxAudio.currentTime = 0;
+    void mainMenuClickSfxAudio.play();
+  } catch {
+    // Ignore click SFX playback errors.
+  }
+}
+
+function bindMainMenuClickSfx() {
+  if (mainMenuClickSfxBound) {
+    return;
+  }
+
+  const menu = document.getElementById('main-menu');
+  if (!menu) {
+    return;
+  }
+
+  menu.addEventListener('click', (event) => {
+    if (!menu.classList.contains('show')) {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    const clickable = target.closest(
+      'button, [role="button"], a[href], input[type="button"], input[type="submit"], [onclick], .plan-map-point, .intel-node',
+    );
+
+    if (!clickable) {
+      return;
+    }
+
+    if (clickable.matches(':disabled') || clickable.getAttribute('aria-disabled') === 'true') {
+      return;
+    }
+
+    playMainMenuClickSfx();
+  }, { capture: true });
+
+  mainMenuClickSfxBound = true;
+}
+
+function getGlobalWalletCredits(fallback = 0) {
+  ensureHubState();
+  const hubCredits = Number(G.hub?.walletCredits);
+  if (Number.isFinite(hubCredits)) {
+    return Math.max(0, hubCredits);
+  }
+
+  const playerCredits = Number(G.P?.cr);
+  if (Number.isFinite(playerCredits)) {
+    return Math.max(0, playerCredits);
+  }
+
+  const pendingCredits = Number(pendingStart?.credits);
+  if (Number.isFinite(pendingCredits)) {
+    return Math.max(0, pendingCredits);
+  }
+
+  const base = Number(fallback);
+  return Number.isFinite(base) ? Math.max(0, base) : 0;
+}
+
+function setGlobalWalletCredits(nextCredits) {
+  ensureHubState();
+  const value = Math.max(0, Math.floor(Number(nextCredits) || 0));
+  G.hub.walletCredits = value;
+
+  if (!G.P) {
+    G.P = {
+      x: 0,
+      y: 0,
+      hp: 100,
+      mhp: 100,
+      bw: 100,
+      mbw: 100,
+      cr: value,
+    };
+  } else {
+    G.P.cr = value;
+  }
+
+  pendingStart = { ...(pendingStart || { wave: 1 }), credits: value };
+  return value;
+}
+
+function applyDebugBootstrap(wave, credits) {
+  ensureHubState();
+
+  if (!DEBUG_BOOTSTRAP?.enabled) {
+    return getGlobalWalletCredits(credits);
+  }
+
+  ensureDataFragmentState();
+
+  if (typeof DEBUG_BOOTSTRAP.contacts !== 'undefined') {
+    ensureDebugContacts(DEBUG_BOOTSTRAP.contacts, wave || 1);
+  }
+
+  if (typeof DEBUG_BOOTSTRAP.dataShards !== 'undefined') {
+    ensureDebugDataShards(DEBUG_BOOTSTRAP.dataShards);
+  }
+
+  if (!G.hub.debugBootstrapApplied) {
+    const debugCredits = Number(DEBUG_BOOTSTRAP.credits);
+    if (Number.isFinite(debugCredits)) {
+      setGlobalWalletCredits(debugCredits);
+    }
+    G.hub.debugBootstrapApplied = true;
+  }
+
+  return getGlobalWalletCredits(credits);
+}
 
 function renderStartMenu() {
   ensureHubState();
@@ -103,6 +252,54 @@ function renderStartMenu() {
   // Hack market — lives inside MARKETPLACE panel
   if (market) {
     market.innerHTML = renderHackMarket();
+
+    market.querySelectorAll('[data-buy-qh]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.getAttribute('data-buy-qh');
+        if (!id) return;
+        buyQuickHackFromMenu(id);
+      });
+    });
+
+    market.querySelectorAll('[data-equip-qh]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.getAttribute('data-equip-qh');
+        const slot = Number(button.getAttribute('data-slot'));
+        if (!id || Number.isNaN(slot)) return;
+        equipQuickHackFromMenu(id, slot);
+      });
+    });
+
+    market.querySelectorAll('[data-buy-breach]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.getAttribute('data-buy-breach');
+        if (!id) return;
+        buyBreachActionFromMenu(id);
+      });
+    });
+
+    market.querySelectorAll('[data-equip-breach]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.getAttribute('data-equip-breach');
+        const slot = Number(button.getAttribute('data-slot'));
+        if (!id || Number.isNaN(slot)) return;
+        equipBreachActionFromMenu(id, slot);
+      });
+    });
+
+    const scannerBtn = market.querySelector('[data-buy-scanner]');
+    if (scannerBtn) {
+      scannerBtn.addEventListener('click', () => {
+        buyMetadataScannerFromMenu();
+      });
+    }
+
+    const decryptorBtn = market.querySelector('[data-buy-decryptor]');
+    if (decryptorBtn) {
+      decryptorBtn.addEventListener('click', () => {
+        buyDecryptorFromMenu();
+      });
+    }
   }
 
   // EKIPA — crew members with portraits
@@ -157,7 +354,7 @@ function renderStartMenu() {
 }
 
 function renderHackMarket() {
-  const credits = G.P?.cr || 0;
+  const credits = getGlobalWalletCredits(0);
   const quickCatalog = getQuickHackDefinitions();
   const breachCatalog = getBreachActionDefinitions();
   const quickLoadout = Array.isArray(G.quickHackLoadout) ? G.quickHackLoadout.slice(0, 4) : ['optics', 'motorics', 'neural', 'ddos'];
@@ -177,7 +374,7 @@ function renderHackMarket() {
     const slotButtons = [0, 1, 2, 3].map((slot) => {
       const active = quickLoadout[slot] === hack.id;
       const disabled = owned ? '' : 'disabled';
-      return `<button class="menu-slot-btn ${active ? 'active' : ''}" onclick="window.MENU_EQUIP_QH('${hack.id}', ${slot})" ${disabled}>S${slot + 1}</button>`;
+      return `<button class="menu-slot-btn ${active ? 'active' : ''}" data-equip-qh="${hack.id}" data-slot="${slot}" ${disabled}>S${slot + 1}</button>`;
     }).join('');
 
     return `
@@ -188,7 +385,7 @@ function renderHackMarket() {
         </div>
         <div class="menu-hack-desc">${hack.desc}</div>
         <div class="menu-hack-actions">
-          <button class="menu-buy-btn" onclick="window.MENU_BUY_QH('${hack.id}')" ${owned ? 'disabled' : ''}>${owned ? 'OWNED' : `BUY ¥${hack.price || 0}`}</button>
+          <button class="menu-buy-btn" data-buy-qh="${hack.id}" ${owned ? 'disabled' : ''}>${owned ? 'OWNED' : `BUY ¥${hack.price || 0}`}</button>
           <span class="menu-hack-slots-inline ${inSlot ? 'active' : ''}">${slotButtons}</span>
         </div>
       </div>
@@ -202,7 +399,7 @@ function renderHackMarket() {
     const slotButtons = [0, 1, 2, 3].map((slot) => {
       const active = breachLoadout[slot] === action.id;
       const disabled = owned ? '' : 'disabled';
-      return `<button class="menu-slot-btn ${active ? 'active' : ''}" onclick="window.MENU_EQUIP_BREACH('${action.id}', ${slot})" ${disabled}>S${slot + 1}</button>`;
+      return `<button class="menu-slot-btn ${active ? 'active' : ''}" data-equip-breach="${action.id}" data-slot="${slot}" ${disabled}>S${slot + 1}</button>`;
     }).join('');
 
     return `
@@ -213,7 +410,7 @@ function renderHackMarket() {
         </div>
         <div class="menu-hack-desc">${action.desc}</div>
         <div class="menu-hack-actions">
-          <button class="menu-buy-btn" onclick="window.MENU_BUY_BREACH('${action.id}')" ${owned ? 'disabled' : ''}>${owned ? 'OWNED' : `BUY ¥${action.price || 0}`}</button>
+          <button class="menu-buy-btn" data-buy-breach="${action.id}" ${owned ? 'disabled' : ''}>${owned ? 'OWNED' : `BUY ¥${action.price || 0}`}</button>
           <span class="menu-hack-slots-inline ${inSlot ? 'active' : ''}">${slotButtons}</span>
         </div>
       </div>
@@ -251,7 +448,7 @@ function renderHackMarket() {
           ujawnia prawdopodobieństwo autentyczności danych. Bez niego wszystkie dane wyglądają tak samo.
         </div>
         <div class="menu-hack-actions">
-          <button class="menu-buy-btn menu-buy-btn--tool" onclick="window.MENU_BUY_SCANNER()" ${scannerOwned || credits < 2000 ? 'disabled' : ''}>
+          <button class="menu-buy-btn menu-buy-btn--tool" data-buy-scanner="1" ${scannerOwned || credits < 2000 ? 'disabled' : ''}>
             ${scannerOwned ? 'OWNED' : credits < 2000 ? `BRAKUJE ¥${2000 - credits}` : 'KUP — ¥2000'}
           </button>
         </div>
@@ -270,7 +467,7 @@ function renderHackMarket() {
           deszyfrować każdy fragment na DATA BOARD.
         </div>
         <div class="menu-hack-actions">
-          <button class="menu-buy-btn menu-buy-btn--tool" onclick="window.MENU_BUY_DECRYPTOR()" ${decOwned || credits < 2500 ? 'disabled' : ''}>
+          <button class="menu-buy-btn menu-buy-btn--tool" data-buy-decryptor="1" ${decOwned || credits < 2500 ? 'disabled' : ''}>
             ${decOwned ? 'OWNED' : credits < 2500 ? `BRAKUJE ¥${2500 - credits}` : 'KUP — ¥2500'}
           </button>
         </div>
@@ -286,6 +483,8 @@ function buyQuickHackFromMenu(id) {
     log(result.message || 'Nie udalo sie kupic hacka.', 'w');
     return;
   }
+
+  setGlobalWalletCredits(G.P?.cr ?? getGlobalWalletCredits(0));
 
   log('Hack odblokowany w market.', 'ok');
   refreshHUD();
@@ -310,6 +509,8 @@ function buyBreachActionFromMenu(id) {
     log(result.message || 'Nie udalo sie kupic akcji breach.', 'w');
     return;
   }
+
+  setGlobalWalletCredits(G.P?.cr ?? getGlobalWalletCredits(0));
 
   log('Akcja breach odblokowana w market.', 'ok');
   refreshHUD();
@@ -338,6 +539,7 @@ function buyMetadataScannerFromMenu() {
     return;
   }
   G.P.cr -= cost;
+  setGlobalWalletCredits(G.P.cr);
   ensureDataFragmentState();
   unlockProbability();
   saveDataFragments();
@@ -357,6 +559,7 @@ function buyDecryptorFromMenu() {
     return;
   }
   G.P.cr -= cost;
+  setGlobalWalletCredits(G.P.cr);
   ensureDataFragmentState();
   unlockDecryptor();
   refreshHUD();
@@ -365,24 +568,34 @@ function buyDecryptorFromMenu() {
 }
 
 function getAllRunsForPlan() {
+  const toRecruitRunId = (contactId) => {
+    const raw = String(contactId || '');
+    const tail = raw.match(/(\d+)$/);
+    return `rc-${tail ? tail[1] : raw.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'x'}`;
+  };
+
   const normalRuns = getActiveRunOffers();
   const recruitRuns = (G.hub.contacts || [])
     .filter((c) => c.mission?.status === 'ready' || c.mission?.status === 'intel')
-    .map((c) => ({
-      id: `recruit-${c.id}`,
+    .map((c) => {
+      const recruitRunId = toRecruitRunId(c.id);
+      return {
+      id: recruitRunId,
       typeId: 'recruit',
       typeName: c.alias,
       target: c.specialization,
       mapX: c.mapX || Math.floor(Math.random() * 80 + 10),
       mapY: c.mapY || Math.floor(Math.random() * 70 + 20),
       danger: c.risk === 'hardcore' ? 10 : c.risk === 'hard' ? 8 : c.risk === 'medium' ? 5 : 2,
-      security: 0,
+      security: c.risk === 'hardcore' ? 82 : c.risk === 'hard' ? 64 : c.risk === 'medium' ? 46 : 28,
       profit: 0,
       contactChance: 1,
       floorCount: 1,
+      intelHost: `${recruitRunId}.ops.gp`,
       recruit: true,
       contact: c,
-    }));
+    };
+    });
 
   return [...normalRuns, ...recruitRuns];
 }
@@ -461,6 +674,7 @@ function renderPlanRunDetail(runId) {
 
   const diff = getRunDifficulty(run);
   const diffLabels = { easy: 'ŁATWY', medium: 'ŚREDNI', hard: 'TRUDNY', hardcore: 'HARDCORE', recruit: 'REKRUT' };
+  const intelHost = run.intelHost || getRunNetworkName(run);
 
   detail.innerHTML = `
     <div class="plan-detail-title">${run.typeName}</div>
@@ -470,9 +684,13 @@ function renderPlanRunDetail(runId) {
       <span class="plan-run-diff plan-diff-inline ${diff}">${diffLabels[diff] || diff}</span>
     </div>
     <div class="plan-detail-row"><span class="plan-detail-label">PIĘTRA</span><span>${run.floorCount || 1}</span></div>
+    <div class="plan-detail-row"><span class="plan-detail-label">HOST</span><span>${intelHost}</span></div>
     ${run.profit ? `<div class="plan-detail-row"><span class="plan-detail-label">NAGRODA</span><span>¥${run.profit}</span></div>` : ''}
     ${run.contactChance > 0 ? `<div class="plan-detail-row"><span class="plan-detail-label">KONTAKT</span><span>${Math.round(run.contactChance * 100)}%</span></div>` : ''}
     ${run.recruit ? '<div class="plan-detail-recruit">RUN REKRUTACYJNY</div>' : ''}
+    <div class="plan-infiltrate-wrap" style="padding-top:10px; margin-top:8px;">
+      <button class="plan-infiltrate-btn plan-intel-btn" onclick="window.OPEN_RUN_INTEL('${run.id}')">INTEL</button>
+    </div>
   `;
 
   const selectedCrew = getSelectedCrewMember();
@@ -490,6 +708,316 @@ function renderPlanRunDetail(runId) {
       startRun(pendingStart.wave, pendingStart.credits);
     };
   }
+}
+
+function renderIntelHostPicker(runs) {
+  const head = document.getElementById('intel-head');
+  const tree = document.getElementById('intel-tree');
+  const body = document.getElementById('intel-body');
+  const pathEl = document.getElementById('intel-path');
+  const stats = document.getElementById('intel-stats');
+  const fileStatus = document.getElementById('intel-file-status');
+
+  if (!head || !tree || !body || !pathEl || !stats || !fileStatus) {
+    return;
+  }
+
+  head.textContent = 'RUN INTEL // HOSTS';
+  pathEl.textContent = 'hosts /';
+  stats.textContent = `online hosts ${runs.length}`;
+
+  if (!runs.length) {
+    tree.innerHTML = '<div class="intel-empty">Brak hostów INTEL.</div>';
+    body.textContent = 'Nie ma dostępnych runów do analizy INTEL.';
+    fileStatus.textContent = 'status: none';
+    fileStatus.className = 'intel-file-status';
+    updateIntelMarkButtons(null);
+    return;
+  }
+
+  tree.innerHTML = runs.map((run) => {
+    const difficulty = run.recruit ? 'RECRUIT' : `DANGER ${run.danger || 0}`;
+    const host = run.intelHost || 'unknown';
+    return `<button class="intel-node intel-node-dir" data-type="host" data-runid="${run.id}">[HOST] ${host} :: ${run.typeName} :: ${difficulty}</button>`;
+  }).join('');
+
+  body.textContent = 'Wybierz host z listy, aby wejść do root katalogu tego runa.';
+  fileStatus.textContent = 'status: none';
+  fileStatus.className = 'intel-file-status';
+  updateIntelMarkButtons(null);
+
+  tree.querySelectorAll('.intel-node[data-type="host"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const targetRunId = button.dataset.runid;
+      const run = runs.find((item) => item.id === targetRunId);
+      if (!run) return;
+
+      planSelectedRunId = run.id;
+      intelRunId = run.id;
+      intelCwd = '/';
+      intelSelectedPath = '/briefing/run_profile.txt';
+      intelHostPickerActive = false;
+      openRunIntelSession(run, 'panel');
+      renderIntelPanel(run.id);
+    });
+  });
+}
+
+function renderIntelPanel(runId = planSelectedRunId) {
+  const panel = document.getElementById('menu-panel-intel');
+  const head = document.getElementById('intel-head');
+  const tree = document.getElementById('intel-tree');
+  const body = document.getElementById('intel-body');
+  const pathEl = document.getElementById('intel-path');
+  const stats = document.getElementById('intel-stats');
+  const fileStatus = document.getElementById('intel-file-status');
+
+  if (!panel || !head || !tree || !body || !pathEl || !stats || !fileStatus) {
+    return;
+  }
+
+  const runs = getAllRunsForPlan();
+  const effectiveRunId = runId === INTEL_HOST_PICKER_VIEW
+    ? INTEL_HOST_PICKER_VIEW
+    : (runId || intelRunId || planSelectedRunId);
+
+  if (effectiveRunId === INTEL_HOST_PICKER_VIEW || intelHostPickerActive) {
+    intelRunId = null;
+    intelCwd = '/';
+    intelSelectedPath = null;
+    intelHostPickerActive = true;
+    renderIntelHostPicker(runs);
+    return;
+  }
+
+  const run = runs.find((item) => item.id === effectiveRunId);
+
+  if (!run) {
+    intelRunId = null;
+    intelCwd = '/';
+    intelSelectedPath = null;
+    head.textContent = 'RUN INTEL // NO TARGET';
+    pathEl.textContent = '/';
+    stats.textContent = 'offline';
+    tree.innerHTML = '<div class="intel-empty">Wybierz run na mapie i kliknij INTEL.</div>';
+    body.textContent = 'Brak aktywnego targetu intel.';
+    fileStatus.textContent = 'status: none';
+    fileStatus.className = 'intel-file-status';
+    updateIntelMarkButtons(null);
+    return;
+  }
+
+  intelRunId = run.id;
+  intelHostPickerActive = false;
+  ensureRunIntelForRun(run);
+
+  if (!intelSelectedPath) {
+    intelSelectedPath = '/briefing/run_profile.txt';
+  }
+
+  head.textContent = `RUN INTEL // ${run.typeName}`;
+
+  const listed = listRunIntelDir(run.id, intelCwd, '.');
+  if (!listed.ok) {
+    intelCwd = '/';
+  }
+
+  const current = listRunIntelDir(run.id, intelCwd, '.');
+  const entries = current.ok ? current.entries : [];
+
+  pathEl.textContent = `cwd ${intelCwd}`;
+
+  const usage = getRunIntelSummary(run.id);
+  stats.textContent = `host ${usage.host || run.intelHost || 'unknown'} | sessions ${usage.sessions} | files ${usage.filesRead} | signal ${usage.signalReads} | noise ${usage.noiseReads} | v ${usage.verifiedMarks} | s ${usage.suspiciousMarks}`;
+
+  const marks = getIntelMarkMap(run.id);
+
+  const parentBtn = intelCwd !== '/'
+    ? `<button class="intel-node intel-node-dir" data-path="..">..</button>`
+    : '<button class="intel-node intel-node-dir" data-path=".." data-type="host-picker">..</button>';
+
+  tree.innerHTML = [
+    parentBtn,
+    ...entries.map((entry) => {
+      const cls = entry.type === 'dir' ? 'intel-node-dir' : 'intel-node-file';
+      const unread = usage.available && entry.type === 'file' && !Object.prototype.hasOwnProperty.call(getIntelReadMap(run.id), entry.path)
+        ? ' intel-node-unread'
+        : '';
+      const mark = entry.type === 'file' ? marks[entry.path] : '';
+      const markClass = mark === 'verified'
+        ? ' intel-node-mark-verified'
+        : mark === 'suspicious'
+          ? ' intel-node-mark-suspicious'
+          : '';
+      const markPrefix = mark === 'verified'
+        ? '[V] '
+        : mark === 'suspicious'
+          ? '[?] '
+          : '';
+      return `<button class="intel-node ${cls}${unread}${markClass}" data-path="${entry.path}" data-type="${entry.type}">${markPrefix}${entry.type === 'dir' ? '[DIR] ' : '[FILE] '}${entry.name}</button>`;
+    }),
+  ].join('');
+
+  tree.querySelectorAll('.intel-node').forEach((button) => {
+    button.addEventListener('click', () => {
+      const path = button.dataset.path || '/';
+      const type = button.dataset.type || 'dir';
+
+      if (path === '..') {
+        if (intelCwd === '/') {
+          intelHostPickerActive = true;
+          renderIntelPanel(INTEL_HOST_PICKER_VIEW);
+          return;
+        }
+
+        const changed = changeRunIntelDir(run.id, intelCwd, '..');
+        if (changed.ok) {
+          intelCwd = changed.cwd;
+          renderIntelPanel(run.id);
+        }
+        return;
+      }
+
+      if (type === 'dir') {
+        const changed = changeRunIntelDir(run.id, intelCwd, path);
+        if (changed.ok) {
+          intelCwd = changed.cwd;
+          renderIntelPanel(run.id);
+        }
+        return;
+      }
+
+      intelSelectedPath = path;
+      renderIntelPanel(run.id);
+    });
+  });
+
+  bindIntelMarkButtons(run.id);
+  renderIntelFile(run.id, intelSelectedPath);
+}
+
+function renderIntelFile(runId, path) {
+  const body = document.getElementById('intel-body');
+  if (!body) {
+    return;
+  }
+
+  const response = readRunIntelFile(runId, intelCwd, path, 'panel');
+  if (!response.ok) {
+    body.textContent = `FILE ERROR: ${response.reason || 'unknown'}`;
+    updateIntelFileStatus(runId, path, false);
+    return;
+  }
+
+  intelSelectedPath = response.path;
+  updateIntelFileStatus(runId, response.path, true);
+  body.textContent = response.content;
+}
+
+function bindIntelMarkButtons(runId) {
+  const verifiedBtn = document.getElementById('intel-mark-verified');
+  const suspiciousBtn = document.getElementById('intel-mark-suspicious');
+  const clearBtn = document.getElementById('intel-mark-clear');
+
+  if (!verifiedBtn || !suspiciousBtn || !clearBtn) {
+    return;
+  }
+
+  const attach = (button, mark) => {
+    button.onclick = () => {
+      if (!runId || !intelSelectedPath) {
+        return;
+      }
+
+      const result = setRunIntelMark(runId, intelCwd, intelSelectedPath, mark);
+      if (!result.ok) {
+        return;
+      }
+
+      intelSelectedPath = result.path;
+      updateIntelFileStatus(runId, result.path, true);
+      renderIntelPanel(runId);
+    };
+  };
+
+  attach(verifiedBtn, 'verified');
+  attach(suspiciousBtn, 'suspicious');
+  attach(clearBtn, 'clear');
+}
+
+function updateIntelFileStatus(runId, path, isFile) {
+  const statusEl = document.getElementById('intel-file-status');
+  if (!statusEl) {
+    return;
+  }
+
+  if (!runId || !path || !isFile) {
+    statusEl.textContent = 'status: none';
+    statusEl.className = 'intel-file-status';
+    updateIntelMarkButtons(null);
+    return;
+  }
+
+  const mark = getRunIntelMark(runId, intelCwd, path);
+  const markLabel = mark.ok ? mark.mark : 'none';
+  statusEl.textContent = `status: ${markLabel}`;
+  statusEl.className = 'intel-file-status';
+  if (markLabel === 'verified') {
+    statusEl.classList.add('status-verified');
+  }
+  if (markLabel === 'suspicious') {
+    statusEl.classList.add('status-suspicious');
+  }
+  updateIntelMarkButtons(markLabel);
+}
+
+function updateIntelMarkButtons(activeMark) {
+  const verifiedBtn = document.getElementById('intel-mark-verified');
+  const suspiciousBtn = document.getElementById('intel-mark-suspicious');
+  const clearBtn = document.getElementById('intel-mark-clear');
+
+  if (!verifiedBtn || !suspiciousBtn || !clearBtn) {
+    return;
+  }
+
+  verifiedBtn.classList.toggle('is-active', activeMark === 'verified');
+  suspiciousBtn.classList.toggle('is-active', activeMark === 'suspicious');
+  clearBtn.classList.toggle('is-active', activeMark === 'clear' || activeMark === 'none');
+}
+
+function getIntelReadMap(runId) {
+  const intel = ensureRunIntelForRun(runId);
+  if (!intel?.stats?.filesRead) {
+    return {};
+  }
+
+  return intel.stats.filesRead;
+}
+
+function getIntelMarkMap(runId) {
+  const intel = ensureRunIntelForRun(runId);
+  if (!intel?.stats?.userMarks) {
+    return {};
+  }
+
+  return intel.stats.userMarks;
+}
+
+function openIntelForRun(runId) {
+  planSelectedRunId = runId || planSelectedRunId;
+  intelRunId = planSelectedRunId;
+  intelCwd = '/';
+  intelSelectedPath = '/briefing/run_profile.txt';
+  intelHostPickerActive = false;
+
+  const runs = getAllRunsForPlan();
+  const run = runs.find((item) => item.id === planSelectedRunId);
+  if (run) {
+    openRunIntelSession(run, 'panel');
+  }
+
+  switchStartMenuTab('intel');
+  renderIntelPanel(planSelectedRunId);
 }
 
 function hashString(input) {
@@ -575,7 +1103,7 @@ function buildOperatorPortrait(member) {
 }
 
 function switchStartMenuTab(tab) {
-  const valid = ['plan', 'recruit', 'market', 'terminal', 'instructions', 'databoard'];
+  const valid = ['plan', 'recruit', 'market', 'terminal', 'instructions', 'databoard', 'intel'];
   const normalized = valid.includes(tab) ? tab : 'plan';
   const tabPlan = document.getElementById('menu-tab-plan');
   const tabRecruit = document.getElementById('menu-tab-recruit');
@@ -583,12 +1111,14 @@ function switchStartMenuTab(tab) {
   const tabTerminal = document.getElementById('menu-tab-terminal');
   const tabInstructions = document.getElementById('menu-tab-instructions');
   const tabDataboard = document.getElementById('menu-tab-databoard');
+  const tabIntel = document.getElementById('menu-tab-intel');
   const panelPlan = document.getElementById('menu-panel-plan');
   const panelRecruit = document.getElementById('menu-panel-recruit');
   const panelMarket = document.getElementById('menu-panel-market');
   const panelTerminal = document.getElementById('menu-panel-terminal');
   const panelInstructions = document.getElementById('menu-panel-instructions');
   const panelDataboard = document.getElementById('menu-panel-databoard');
+  const panelIntel = document.getElementById('menu-panel-intel');
 
   if (tabPlan) tabPlan.classList.toggle('active', normalized === 'plan');
   if (tabRecruit) tabRecruit.classList.toggle('active', normalized === 'recruit');
@@ -596,12 +1126,14 @@ function switchStartMenuTab(tab) {
   if (tabTerminal) tabTerminal.classList.toggle('active', normalized === 'terminal');
   if (tabInstructions) tabInstructions.classList.toggle('active', normalized === 'instructions');
   if (tabDataboard) tabDataboard.classList.toggle('active', normalized === 'databoard');
+  if (tabIntel) tabIntel.classList.toggle('active', normalized === 'intel');
   if (panelPlan) panelPlan.classList.toggle('show', normalized === 'plan');
   if (panelRecruit) panelRecruit.classList.toggle('show', normalized === 'recruit');
   if (panelMarket) panelMarket.classList.toggle('show', normalized === 'market');
   if (panelTerminal) panelTerminal.classList.toggle('show', normalized === 'terminal');
   if (panelInstructions) panelInstructions.classList.toggle('show', normalized === 'instructions');
   if (panelDataboard) panelDataboard.classList.toggle('show', normalized === 'databoard');
+  if (panelIntel) panelIntel.classList.toggle('show', normalized === 'intel');
 
   renderStartMenu();
   if (normalized === 'plan') {
@@ -614,6 +1146,20 @@ function switchStartMenuTab(tab) {
     setTimeout(() => {
       syncMenuTerminalStatus();
       focusMenuTerminalInput();
+    }, 0);
+  }
+  if (normalized === 'intel') {
+    setTimeout(() => {
+      const runs = getAllRunsForPlan();
+      const run = runs.find((item) => item.id === (planSelectedRunId || intelRunId));
+      if (intelHostPickerActive) {
+        renderIntelPanel(INTEL_HOST_PICKER_VIEW);
+        return;
+      }
+      if (run) {
+        openRunIntelSession(run, 'panel');
+      }
+      renderIntelPanel(planSelectedRunId || intelRunId);
     }, 0);
   }
 }
@@ -646,7 +1192,10 @@ function showMainMenu(fromRun = false) {
 }
 
 function openMainMenuForRunSelection(wave, credits) {
-  pendingStart = { wave, credits };
+  const creditsForRun = applyDebugBootstrap(wave, credits);
+  const globalCredits = getGlobalWalletCredits(creditsForRun);
+  setGlobalWalletCredits(globalCredits);
+  pendingStart = { wave, credits: globalCredits };
   switchStartMenuTab('plan');
   showMainMenu(true);
 }
@@ -812,6 +1361,8 @@ export function boot() {
     startLoop();
   }
 
+  bindMainMenuClickSfx();
+
   initMenuTerminal({
     onStateMutated: () => {
       renderStartMenu();
@@ -836,6 +1387,7 @@ export function boot() {
   window.START_SELECTED_RUN = startSelectedRun;
   window.START_SELECTED_RUN_FROM_MAP = startSelectedRunFromMap;
   window.START_TUTORIAL = startTutorialRun;
+  window.OPEN_RUN_INTEL = openIntelForRun;
   window.MENU_BUY_QH = buyQuickHackFromMenu;
   window.MENU_EQUIP_QH = equipQuickHackFromMenu;
   window.MENU_BUY_BREACH = buyBreachActionFromMenu;
@@ -850,6 +1402,9 @@ export function boot() {
 export function startRun(wave, credits) {
   hideMainMenu();
   ensureHubState();
+  const bootstrapCredits = applyDebugBootstrap(wave, credits);
+  const startCredits = getGlobalWalletCredits(bootstrapCredits);
+  setGlobalWalletCredits(startCredits);
 
   const selected = markRunStarted(G.hub.selectedOperatorId);
   if (!selected.success) {
@@ -858,13 +1413,29 @@ export function startRun(wave, credits) {
   }
 
   const run = G.hub.activeRuns.find((r) => r.id === G.hub.currentRunId);
+  G.hub.activeRunMeta = run
+    ? {
+        id: run.id,
+        typeName: run.typeName,
+        target: run.target,
+        danger: run.danger,
+        security: run.security,
+        floorCount: run.floorCount,
+        profit: run.profit,
+        intelHost: run.intelHost || getRunNetworkName(run),
+      }
+    : null;
+
+  if (run) {
+    openRunIntelSession(run, 'run-start');
+  }
   const floorCount = run?.floorCount || 2;
 
   const floors = generateMultiFloorMap(floorCount);
   const map = floors[0];
   const devices = spawnEntities(map, wave);
 
-  initWaveState({ wave, credits, map, devices });
+  initWaveState({ wave, credits: startCredits, map, devices });
   G.floors = floors;
   G.code = floors.code || null;
   G.codeFound = false;
@@ -896,7 +1467,7 @@ export function startRun(wave, credits) {
   const operator = getSelectedCrewMember();
   log(`Operator: ${operator ? operator.alias : 'N/A'}`, 'ok');
   log('System online. Infiltruj.', 'ok');
-  log('KLIKNIJ obiekt aby zobaczyć opcje hackowania');
+  log('Uzyj TAB i live terminal overlay do hackowania.');
   render();
 }
 

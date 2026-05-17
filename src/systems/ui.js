@@ -20,6 +20,8 @@ import {
 	getCategoryColor,
 	getProbabilityLabel,
 	isProbabilityUnlocked,
+	isFragmentMetadataScanned,
+	scanFragmentMetadata,
 	isDecryptorUnlocked,
 	isFragmentDecrypted,
 	decryptFragment,
@@ -44,6 +46,26 @@ const MAIN_HACK_LOADING_LINES = [
 	'EXECUTING breach.sh...',
 	'ROOT SESSION WINDOW READY.',
 ];
+
+const DECRYPT_SFX_PATH = 'assets/sfx/decryption.wav';
+let decryptSfxAudio = null;
+
+function playDecryptSfx() {
+	if (!G.audioEnabled) return;
+
+	try {
+		if (!decryptSfxAudio) {
+			decryptSfxAudio = new Audio(DECRYPT_SFX_PATH);
+			decryptSfxAudio.preload = 'auto';
+			decryptSfxAudio.volume = 0.75;
+		}
+
+		decryptSfxAudio.currentTime = 0;
+		void decryptSfxAudio.play();
+	} catch {
+		// Ignore SFX playback errors (autoplay policy or missing device)
+	}
+}
 
 export function bindUI() {
 	G.dom = {
@@ -633,6 +655,81 @@ function _garbleText(text, seed) {
 	}).join('');
 }
 
+function _animateDecryptReveal(el, finalText, seed = 1, done = () => {}) {
+	if (!el) {
+		done();
+		return;
+	}
+
+	const glyphs = '▓░█▒▄▀■□▪▫@#$%^&*!?[]{}|<>/\\~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+	const chars = finalText.split('');
+	const length = chars.length;
+	let frame = 0;
+	let rafId = 0;
+	let cancelled = false;
+	const durationMs = 4000; // Match SFX duration (4 seconds)
+	const start = performance.now();
+
+	const render = (ts) => {
+		if (cancelled) return;
+		const progress = Math.min(1, (ts - start) / durationMs);
+		const revealCount = Math.floor(progress * length);
+		frame += 1;
+
+		const text = chars.map((ch, i) => {
+			if (ch === '\n' || ch === '\t') return ch;
+			if (i < revealCount) return ch;
+			if (ch === ' ') return ' ';
+			const idx = (seed + i * 17 + frame * 7) % glyphs.length;
+			return glyphs[idx];
+		}).join('');
+
+		el.textContent = text;
+
+		if (progress >= 1) {
+			el.textContent = finalText;
+			done();
+			return;
+		}
+
+		rafId = requestAnimationFrame(render);
+	};
+
+	rafId = requestAnimationFrame(render);
+
+	return () => {
+		cancelled = true;
+		if (rafId) cancelAnimationFrame(rafId);
+	};
+}
+
+function _animateMetadataReveal(el, probability, done = () => {}) {
+	if (!el) {
+		done();
+		return;
+	}
+
+	const target = getProbabilityLabel(probability);
+	const frames = [];
+	for (let i = 0; i < 8; i += 1) {
+		frames.push(`<span class="db-prob-badge" style="background:#7ac8ff20;border-color:#7ac8ff;color:#7ac8ff">SCANNING...</span>`);
+	}
+	frames.push(`<span class="db-prob-badge" style="background:${target.color}20;border-color:${target.color};color:${target.color}">${target.label}</span>`);
+
+	let i = 0;
+	const tick = () => {
+		el.innerHTML = frames[i] || frames[frames.length - 1];
+		i += 1;
+		if (i < frames.length) {
+			setTimeout(tick, i < frames.length - 1 ? 80 : 120);
+			return;
+		}
+		done();
+	};
+
+	tick();
+}
+
 // Internal state for the board UI (not persisted — resets on tab switch)
 const _db = {
 	selectedId: null,
@@ -991,12 +1088,15 @@ function _renderDetail(id) {
 
 	// Probability
 	if (elProb) {
-		if (isProbabilityUnlocked()) {
+		const scannerReady = isProbabilityUnlocked();
+		if (scannerReady && isFragmentMetadataScanned(id)) {
 			const { label, color: probColor } = getProbabilityLabel(f.probability);
 			elProb.innerHTML = `
 				<span class="db-prob-badge" style="background:${probColor}20;border-color:${probColor};color:${probColor}">
 					${label}
 				</span>`;
+		} else if (scannerReady) {
+			elProb.innerHTML = '<span class="db-prob-locked">[PROBABILITY: READY — uruchom SCAN METADATA]</span>';
 		} else {
 			elProb.innerHTML = '<span class="db-prob-locked">[PROBABILITY: ENCRYPTED — kup METADATA SCANNER]</span>';
 		}
@@ -1030,6 +1130,33 @@ function _renderDetail(id) {
 	{
 		let existingBtn = document.getElementById('db-btn-decrypt');
 		if (existingBtn) existingBtn.remove();
+		let existingScanBtn = document.getElementById('db-btn-scan-metadata');
+		if (existingScanBtn) existingScanBtn.remove();
+
+		if (isProbabilityUnlocked() && !isFragmentMetadataScanned(id)) {
+			const scanBtn = document.createElement('button');
+			scanBtn.id = 'db-btn-scan-metadata';
+			scanBtn.className = 'db-action-btn';
+			scanBtn.textContent = 'SCAN METADATA';
+			scanBtn.addEventListener('click', () => {
+				scanBtn.disabled = true;
+				scanBtn.textContent = 'SCANNING...';
+				scanFragmentMetadata(id);
+				if (elProb) {
+					_animateMetadataReveal(elProb, f.probability, () => {
+						if (_db.selectedId === id) {
+							_renderDetail(id);
+						}
+					});
+				} else if (_db.selectedId === id) {
+					_renderDetail(id);
+				}
+			});
+			if (elNote && elNote.parentNode) {
+				elNote.parentNode.insertBefore(scanBtn, elNote);
+			}
+		}
+
 		if (isDecryptorUnlocked() && !isFragmentDecrypted(id)) {
 			const btn = document.createElement('button');
 			btn.id = 'db-btn-decrypt';
@@ -1037,9 +1164,31 @@ function _renderDetail(id) {
 			btn.textContent = 'DESZYFRUJ';
 			btn.addEventListener('click', () => {
 				decryptFragment(id);
-				_renderDetail(id);
-				_renderFragmentList();
-				_renderBoardCards();
+				btn.disabled = true;
+				btn.textContent = 'DESZYFROWANIE...';
+				playDecryptSfx();
+				if (elBody) {
+					const stopAnim = _animateDecryptReveal(elBody, f.content, _idToSeed(id) + 11, () => {
+						if (_db.selectedId === id) {
+							_renderDetail(id);
+						}
+						_renderFragmentList();
+						_renderBoardCards();
+					});
+					if (typeof stopAnim !== 'function') {
+						if (_db.selectedId === id) {
+							_renderDetail(id);
+						}
+						_renderFragmentList();
+						_renderBoardCards();
+					}
+				} else {
+					if (_db.selectedId === id) {
+						_renderDetail(id);
+					}
+					_renderFragmentList();
+					_renderBoardCards();
+				}
 			});
 			// Insert before the note textarea
 			if (elNote && elNote.parentNode) {

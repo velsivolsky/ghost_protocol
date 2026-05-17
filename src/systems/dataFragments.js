@@ -243,11 +243,15 @@ export function ensureDataFragmentState() {
       userNotes: {},
       paranoiaLevel: 0,
       probabilityUnlocked: false,
+      metadataScannerInstalled: false,
+      metadataScannedFragments: [],
       decryptorUnlocked: false,
       decryptedFragments: [],
     };
   } else {
     // Migrate old saves that lack the new fields
+    if (typeof G.hub.dataFragments.metadataScannerInstalled === 'undefined') G.hub.dataFragments.metadataScannerInstalled = false;
+    if (!Array.isArray(G.hub.dataFragments.metadataScannedFragments)) G.hub.dataFragments.metadataScannedFragments = [];
     if (typeof G.hub.dataFragments.decryptorUnlocked === 'undefined') G.hub.dataFragments.decryptorUnlocked = false;
     if (!Array.isArray(G.hub.dataFragments.decryptedFragments)) G.hub.dataFragments.decryptedFragments = [];
   }
@@ -282,6 +286,8 @@ export function loadDataFragments() {
     if (parsed.userNotes && typeof parsed.userNotes === 'object') G.hub.dataFragments.userNotes = parsed.userNotes;
     if (typeof parsed.paranoiaLevel === 'number') G.hub.dataFragments.paranoiaLevel = parsed.paranoiaLevel;
     if (typeof parsed.probabilityUnlocked === 'boolean') G.hub.dataFragments.probabilityUnlocked = parsed.probabilityUnlocked;
+    if (typeof parsed.metadataScannerInstalled === 'boolean') G.hub.dataFragments.metadataScannerInstalled = parsed.metadataScannerInstalled;
+    if (Array.isArray(parsed.metadataScannedFragments)) G.hub.dataFragments.metadataScannedFragments = parsed.metadataScannedFragments;
     if (typeof parsed.decryptorUnlocked === 'boolean') G.hub.dataFragments.decryptorUnlocked = parsed.decryptorUnlocked;
     if (Array.isArray(parsed.decryptedFragments)) G.hub.dataFragments.decryptedFragments = parsed.decryptedFragments;
   } catch {
@@ -344,6 +350,25 @@ export function getFragmentById(id) {
 
 export function getTotalFragmentCount() {
   return FRAGMENT_DEFINITIONS.length;
+}
+
+export function ensureDebugDataShards(count) {
+  ensureDataFragmentState();
+  const target = Math.max(0, Number(count) || 0);
+  const collected = new Set(G.hub.dataFragments.collected);
+
+  if (collected.size >= target) {
+    return getCollectedFragments();
+  }
+
+  for (const frag of FRAGMENT_DEFINITIONS) {
+    if (collected.size >= target) break;
+    if (collected.has(frag.id)) continue;
+    collected.add(frag.id);
+  }
+
+  G.hub.dataFragments.collected = Array.from(collected);
+  return getCollectedFragments();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -419,13 +444,27 @@ export function getAllConnections() {
 
 export function isProbabilityUnlocked() {
   ensureDataFragmentState();
-  return G.hub.dataFragments.probabilityUnlocked;
+  return G.hub.dataFragments.probabilityUnlocked && !!G.hub.dataFragments.metadataScannerInstalled;
 }
 
 export function unlockProbability() {
   ensureDataFragmentState();
   G.hub.dataFragments.probabilityUnlocked = true;
+  G.hub.dataFragments.metadataScannerInstalled = true;
   saveDataFragments();
+}
+
+export function isFragmentMetadataScanned(id) {
+  ensureDataFragmentState();
+  return G.hub.dataFragments.metadataScannedFragments.includes(id);
+}
+
+export function scanFragmentMetadata(id) {
+  ensureDataFragmentState();
+  if (!G.hub.dataFragments.metadataScannedFragments.includes(id)) {
+    G.hub.dataFragments.metadataScannedFragments.push(id);
+    saveDataFragments();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

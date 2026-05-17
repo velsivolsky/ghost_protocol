@@ -560,6 +560,7 @@
           <button id="menu-tab-recruit" class="menu-tab" onclick="SWITCH_START_MENU_TAB('recruit')">REKRUTACJA</button>
           <button id="menu-tab-market" class="menu-tab" onclick="SWITCH_START_MENU_TAB('market')">MARKETPLACE</button>
           <button id="menu-tab-terminal" class="menu-tab" onclick="SWITCH_START_MENU_TAB('terminal')">TERMINAL</button>
+          <button id="menu-tab-intel" class="menu-tab" onclick="SWITCH_START_MENU_TAB('intel')">INTEL</button>
           <button id="menu-tab-databoard" class="menu-tab menu-tab-df" onclick="SWITCH_START_MENU_TAB('databoard')">DATA BOARD</button>
           <button id="menu-tab-instructions" class="menu-tab" onclick="SWITCH_START_MENU_TAB('instructions')">INSTRUKCJE</button>
         </div>
@@ -615,6 +616,28 @@
                 spellcheck="false"
                 placeholder="type 'help'"
               />
+            </div>
+          </div>
+        </div>
+        <div id="menu-panel-intel" class="menu-panel">
+          <div class="intel-layout">
+            <div class="intel-sidebar">
+              <div id="intel-head" class="intel-head">RUN INTEL // NO TARGET</div>
+              <div id="intel-path" class="intel-path">cwd /</div>
+              <div id="intel-stats" class="intel-stats">offline</div>
+              <div id="intel-tree" class="intel-tree">
+                <div class="intel-empty">Wybierz run na mapie i kliknij INTEL.</div>
+              </div>
+            </div>
+            <div class="intel-viewer">
+              <div class="intel-viewer-head">FILE PREVIEW</div>
+              <div id="intel-file-status" class="intel-file-status">status: none</div>
+              <div class="intel-mark-controls">
+                <button id="intel-mark-verified" class="intel-mark-btn intel-mark-verified" type="button">VERIFIED</button>
+                <button id="intel-mark-suspicious" class="intel-mark-btn intel-mark-suspicious" type="button">SUSPICIOUS</button>
+                <button id="intel-mark-clear" class="intel-mark-btn intel-mark-clear" type="button">CLEAR</button>
+              </div>
+              <pre id="intel-body" class="intel-body">Brak aktywnego targetu intel.</pre>
             </div>
           </div>
         </div>

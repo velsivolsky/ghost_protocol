@@ -3,6 +3,7 @@ import { G, byType } from '../core/state.js';
 import { log } from './ui.js';
 import { maybeGrantContactFromMainTerminal, resolveRunFailure, resolveRunSuccess } from './recruitment.js';
 import { maybeGrantDataFragment, saveDataFragments } from './dataFragments.js';
+import { getRunIntelSummary } from './runIntel.js';
 
 export function updateMissionText() {
   if (!G.dom.mission) {
@@ -15,16 +16,20 @@ export function updateMissionText() {
   }
 
   const floorLabel = `PIĘTRO ${G.floor}/${G.floorCount}`;
+  const meta = G.terminalRuntime?.metaObjective;
+  const metaLabel = meta && !meta.completed
+    ? ` | META: <span style="color:#7ac8ff">${meta.title.replace('META: ', '')} ${meta.progress}/${meta.target}</span>`
+    : '';
   const stairHint = G.stairHintActive
     ? ` | <span style="color:${G.elevatorUnlocked ? '#7ac8ff' : '#ff9a3c'}">WINDA: ${G.elevatorUnlocked ? 'kliknij kafelek, aby przejsc' : 'zablokowana - odblokuj w terminalu'}</span>`
     : '';
 
   if (G.missionPhase === 0) {
-    G.dom.mission.innerHTML = `${floorLabel} | CEL: Znajdź terminal główny ⊛ i go zhakuj${stairHint}`;
+    G.dom.mission.innerHTML = `${floorLabel} | CEL: Znajdź terminal główny ⊛ i go zhakuj${stairHint}${metaLabel}`;
   } else if (G.missionPhase === 1) {
-    G.dom.mission.innerHTML = `${floorLabel} | HAKOWANIE: <span style="color:#ffd700">pozostań przy terminalu</span>${stairHint}`;
+    G.dom.mission.innerHTML = `${floorLabel} | HAKOWANIE: <span style="color:#ffd700">pozostań przy terminalu</span>${stairHint}${metaLabel}`;
   } else {
-    G.dom.mission.innerHTML = `${floorLabel} | EXFILTRACJA: <span style="color:#ff3a5c">wróć do wejścia ▲</span>${stairHint}`;
+    G.dom.mission.innerHTML = `${floorLabel} | EXFILTRACJA: <span style="color:#ff3a5c">wróć do wejścia ▲</span>${stairHint}${metaLabel}`;
   }
 }
 
@@ -140,9 +145,34 @@ export function win() {
   G.P.cr += bonus;
   const rewardContact = G.mainHackContactReward;
   const grantedFragment = G.mainHackFragmentReward;
+  const runMeta = G.hub?.activeRunMeta;
+  const intelSummary = getRunIntelSummary(runMeta?.id || null);
+  const aiCounterLevel = G.terminalRuntime?.aiDirector?.counterLevel || 0;
+  const meta = G.terminalRuntime?.metaObjective;
+  const telemetry = G.terminalRuntime?.telemetryLast;
 
   G.dom.rewardText.innerHTML = [
+    '<span style="color:#7ac8ff;font-weight:bold;">RUN SUMMARY</span>',
     `Sektor: SECTOR-0${G.wave}`,
+    runMeta
+      ? `Profil runa: ${runMeta.typeName} | Cel: ${runMeta.target}`
+      : 'Profil runa: brak danych',
+    runMeta
+      ? `Ryzyko/Security: ${runMeta.danger}/10 | ${runMeta.security}%`
+      : 'Ryzyko/Security: brak',
+    runMeta?.intelHost
+      ? `Intel host: ${runMeta.intelHost}`
+      : 'Intel host: n/a',
+    `Node archetype: ${G.terminalRuntime?.archetypeName || 'BALANCED BACKBONE'}`,
+    meta
+      ? `Meta objective: ${meta.title.replace('META: ', '')} ${meta.progress}/${meta.target} ${meta.completed ? '✓' : '✗'}`
+      : 'Meta objective: brak',
+    `AI counter-level: ${aiCounterLevel}`,
+    telemetry
+      ? `Last cmd telemetry: ${telemetry.commandId} | heat +${telemetry.heat} | trace +${telemetry.trace.toFixed(1)} | bw -${telemetry.bw}`
+      : 'Last cmd telemetry: brak',
+    '',
+    '<span style="color:#7ac8ff;font-weight:bold;">ECONOMY</span>',
     `Piętra: ${G.floorCount}`,
     `Nagroda za misję: ¥${bonus}`,
     `Alert przy wyjściu: ${Math.ceil(G.alert)}%`,
@@ -157,6 +187,20 @@ export function win() {
     recruitmentTick.removedAliases.length
       ? `Utracone kontakty: ${recruitmentTick.removedAliases.join(', ')}`
       : 'Utracone kontakty: brak',
+    '',
+    '<span style="color:#7ac8ff;font-weight:bold;">INTEL SUMMARY</span>',
+    intelSummary.available
+      ? `Intel sessions: ${intelSummary.sessions} | files read: ${intelSummary.filesRead}`
+      : 'Intel sessions: 0 | files read: 0',
+    intelSummary.available
+      ? `Signal/Noise/Lore: ${intelSummary.signalReads}/${intelSummary.noiseReads}/${intelSummary.loreReads}`
+      : 'Signal/Noise/Lore: 0/0/0',
+    intelSummary.available
+      ? `Marks verified/suspicious: ${intelSummary.verifiedMarks}/${intelSummary.suspiciousMarks}`
+      : 'Marks verified/suspicious: 0/0',
+    intelSummary.available && intelSummary.noiseReads > intelSummary.signalReads
+      ? '<span style="color:#ff9a3c;">Ocena intel: wysoki szum, niski confidence</span>'
+      : '<span style="color:#00ff9f;">Ocena intel: sygnal operacyjny stabilny</span>',
     grantedFragment
       ? `<span style="color:#b36aff;font-weight:bold;">▶ DATA FRAGMENT: ${grantedFragment.title}</span>`
       : '<span style="color:#555">[ BRAK NOWYCH DANYCH ]</span>',
