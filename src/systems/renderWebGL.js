@@ -6,6 +6,7 @@ let glDataTexture = null;
 let glWallAtlasTexture = null;
 let glFloorAtlasTexture = null;
 let glCeilingAtlasTexture = null;
+let glDecalAtlasTexture = null;
 let glMapTexture = null;
 let glZTexture = null;
 let glColumnData = null;
@@ -22,6 +23,7 @@ let uniformDataTex = null;
 let uniformWallAtlasTex = null;
 let uniformFloorAtlasTex = null;
 let uniformCeilingAtlasTex = null;
+let uniformDecalAtlasTex = null;
 let uniformMapTex = null;
 let uniformZTex = null;
 let uniformMapSize = null;
@@ -34,24 +36,32 @@ let uniformCeilingAtlasGrid = null;
 let uniformWallAtlasEnabled = null;
 let uniformFloorAtlasEnabled = null;
 let uniformCeilingAtlasEnabled = null;
+let uniformDecalAtlasEnabled = null;
 let uniformFloorEnabled = null;
 let uniformFloorMaxDist = null;
 let uniformZMaxDist = null;
+let uniformTime = null;
+let uniformDecalQuality = null;
 
 let lastWallAtlasCanvas = null;
 let lastWallAtlasW = 0;
 let lastWallAtlasH = 0;
 let lastFloorPixelsRef = null;
 let lastCeilingPixelsRef = null;
+let lastDecalAtlasSourceA = null;
+let lastDecalAtlasSourceB = null;
 let lastFloorAtlasW = 0;
 let lastFloorAtlasH = 0;
 let lastCeilingAtlasW = 0;
 let lastCeilingAtlasH = 0;
+let decalAtlasCanvas = null;
 let lastMapW = 0;
 let lastMapH = 0;
 
 const WALL_FOG_DIST = 14;
 const Z_MAX_DIST = 24;
+const DECAL_ATLAS_COLS = 2;
+const DECAL_ATLAS_ROWS = 1;
 
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
@@ -84,6 +94,7 @@ function createProgram(gl) {
     uniform sampler2D uWallAtlasTex;
     uniform sampler2D uFloorAtlasTex;
     uniform sampler2D uCeilingAtlasTex;
+    uniform sampler2D uDecalAtlasTex;
     uniform sampler2D uMapTex;
     uniform sampler2D uZTex;
 
@@ -100,9 +111,49 @@ function createProgram(gl) {
     uniform float uWallAtlasEnabled;
     uniform float uFloorAtlasEnabled;
     uniform float uCeilingAtlasEnabled;
+    uniform float uDecalAtlasEnabled;
     uniform float uFloorEnabled;
     uniform float uFloorMaxDist;
     uniform float uZMaxDist;
+    uniform float uTime;
+    uniform float uDecalQuality;
+
+    float hash12(vec2 p) {
+      vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+      p3 += dot(p3, p3.yzx + 33.33);
+      return fract((p3.x + p3.y) * p3.z);
+    }
+
+    vec2 decalAtlasUv(float typeCode, vec2 localUv) {
+      float tileX = clamp(typeCode - 1.0, 0.0, 1.0);
+      vec2 uv = clamp(localUv, vec2(0.0), vec2(0.9995));
+      return vec2(
+        (tileX + uv.x) / 2.0,
+        uv.y
+      );
+    }
+
+    vec3 applyDecal(vec3 base, vec2 surfaceUv, vec2 decalPos, vec2 decalSize, float typeCode, float emissive, float seed) {
+      if (uDecalAtlasEnabled < 0.5 || typeCode < 0.5) {
+        return base;
+      }
+
+      vec2 safeSize = max(vec2(0.001), decalSize);
+      vec2 localUv = (surfaceUv - decalPos) / safeSize + vec2(0.5);
+      if (localUv.x < 0.0 || localUv.x > 1.0 || localUv.y < 0.0 || localUv.y > 1.0) {
+        return base;
+      }
+
+      vec4 decal = texture2D(uDecalAtlasTex, decalAtlasUv(typeCode, localUv));
+      vec3 col = mix(base, decal.rgb, decal.a);
+
+      if (typeCode > 1.5) {
+        float flicker = 0.9 + 0.1 * sin(uTime * 0.012 + seed * 17.0);
+        col += decal.rgb * decal.a * emissive * flicker;
+      }
+
+      return col;
+    }
 
     vec3 ceilingColor(float xPx, float yPx, float yN) {
       vec3 topCol = vec3(0.0, 0.0, 0.0);
@@ -132,7 +183,28 @@ function createProgram(gl) {
       );
       vec3 col = texture2D(uCeilingAtlasTex, atlasUv).rgb;
       float fog = max(0.18, 1.0 - rowDist / 18.0);
-      return col * fog;
+      vec3 shaded = col * fog;
+
+      // Technical ceiling panel decals: sparse, deterministic per tile.
+      if (uDecalQuality > 1.5) {
+        float panelPick = hash12(tile + vec2(7.0, 13.0));
+        if (panelPick > 0.972) {
+          // Rotate fracUv 90° CW around tile centre so decal lies flat on ceiling.
+          vec2 cFrac = fracUv - vec2(0.5);
+          vec2 rotFracUv = vec2(cFrac.y, -cFrac.x) + vec2(0.5);
+          shaded = applyDecal(
+            shaded,
+            rotFracUv,
+            vec2(0.5, 0.5),
+            vec2(0.42, 0.42),
+            1.0,
+            0.03,
+            panelPick
+          );
+        }
+      }
+
+      return shaded;
     }
 
     vec3 floorFallbackColor(float yN) {
@@ -169,17 +241,17 @@ function createProgram(gl) {
       return floor(h * 9.0);
     }
 
-    vec3 wallColor(float distN, float side, float hitTile, float variant, float texU, float yPx) {
+    vec3 wallColor(float distN, float side, float hitTile, float variant, float texU, float xPx, float yPx) {
       vec3 col;
+      float wallU = clamp(texU, 0.0, 0.9995);
+      float dist = max(0.08, distN * 14.0);
+      float lineH = min(uScreen.y * 2.0, uScreen.y / dist);
+      float wallTop = uHalfH - lineH * 0.5;
+      float wallV = clamp((yPx - wallTop) / max(1.0, lineH), 0.0, 0.9995);
 
       if (uWallAtlasEnabled > 0.5 && abs(hitTile - 1.0) < 0.5) {
         float tileX = mod(variant, uWallAtlasGrid.x);
         float tileY = floor(variant / uWallAtlasGrid.x);
-        float wallU = clamp(texU, 0.0, 0.9995);
-        float dist = max(0.08, distN * 14.0);
-        float lineH = min(uScreen.y * 2.0, uScreen.y / dist);
-        float wallTop = uHalfH - lineH * 0.5;
-        float wallV = clamp((yPx - wallTop) / max(1.0, lineH), 0.0, 0.9995);
         vec2 uv = vec2(
           (tileX + wallU) / uWallAtlasGrid.x,
           (tileY + wallV) / uWallAtlasGrid.y
@@ -191,7 +263,27 @@ function createProgram(gl) {
 
       float fog = max(0.12, 1.0 - distN);
       float sideDim = mix(1.0, 0.58, step(0.5, side));
-      return col * fog * sideDim;
+      col = col * fog * sideDim;
+
+      // Fully GPU-side, deterministic wall decals (no CPU metadata upload).
+      if (uDecalAtlasEnabled > 0.5 && uDecalQuality > 0.5 && abs(hitTile - 1.0) < 0.5) {
+        // Cheap deterministic seed per column-like bucket: no trig, no world-hit reconstruction.
+        vec2 seedKey = vec2(floor(xPx * 0.5), variant * 13.0 + side * 7.0 + floor(distN * 255.0));
+        float seed = hash12(seedKey);
+
+        float threshold = (uDecalQuality > 1.5) ? 0.915 : 0.965;
+        if (seed > threshold) {
+          float typeCode = (uDecalQuality > 1.5 && seed > 0.982) ? 2.0 : 1.0;
+          float emissive = (typeCode > 1.5) ? 0.70 : 0.02;
+          vec2 decalPos = vec2(
+            0.30 + 0.40 * hash12(seedKey + vec2(11.0, 3.0)),
+            0.24 + 0.50 * hash12(seedKey + vec2(5.0, 17.0))
+          );
+          col = applyDecal(col, vec2(wallU, wallV), decalPos, vec2(0.34, 0.28), typeCode, emissive, seed);
+        }
+      }
+
+      return col;
     }
 
     vec3 floorColor(float xPx, float yPx, float zDistN, float yN) {
@@ -282,7 +374,7 @@ function createProgram(gl) {
       } else if (yPx > endY) {
         color = floorColor(xPx, yPx, zDistN, yN);
       } else {
-        color = wallColor(distN, side, hitTile, variant, texU, yPx);
+        color = wallColor(distN, side, hitTile, variant, texU, xPx, yPx);
       }
 
       gl_FragColor = vec4(color, 1.0);
@@ -397,15 +489,17 @@ export function initWebGLRenderer(G) {
   const wallTexture = gl.createTexture();
   const floorTexture = gl.createTexture();
   const ceilingTexture = gl.createTexture();
+  const decalTexture = gl.createTexture();
   const mapTexture = gl.createTexture();
   const zTexture = gl.createTexture();
 
-  if (!buffer || !dataTexture || !wallTexture || !floorTexture || !ceilingTexture || !mapTexture || !zTexture) {
+  if (!buffer || !dataTexture || !wallTexture || !floorTexture || !ceilingTexture || !decalTexture || !mapTexture || !zTexture) {
     if (buffer) gl.deleteBuffer(buffer);
     if (dataTexture) gl.deleteTexture(dataTexture);
     if (wallTexture) gl.deleteTexture(wallTexture);
     if (floorTexture) gl.deleteTexture(floorTexture);
     if (ceilingTexture) gl.deleteTexture(ceilingTexture);
+    if (decalTexture) gl.deleteTexture(decalTexture);
     if (mapTexture) gl.deleteTexture(mapTexture);
     if (zTexture) gl.deleteTexture(zTexture);
     gl.deleteProgram(program);
@@ -420,6 +514,7 @@ export function initWebGLRenderer(G) {
   glWallAtlasTexture = wallTexture;
   glFloorAtlasTexture = floorTexture;
   glCeilingAtlasTexture = ceilingTexture;
+  glDecalAtlasTexture = decalTexture;
   glMapTexture = mapTexture;
   glZTexture = zTexture;
 
@@ -431,6 +526,7 @@ export function initWebGLRenderer(G) {
   uniformWallAtlasTex = gl.getUniformLocation(program, 'uWallAtlasTex');
   uniformFloorAtlasTex = gl.getUniformLocation(program, 'uFloorAtlasTex');
   uniformCeilingAtlasTex = gl.getUniformLocation(program, 'uCeilingAtlasTex');
+  uniformDecalAtlasTex = gl.getUniformLocation(program, 'uDecalAtlasTex');
   uniformMapTex = gl.getUniformLocation(program, 'uMapTex');
   uniformZTex = gl.getUniformLocation(program, 'uZTex');
   uniformMapSize = gl.getUniformLocation(program, 'uMapSize');
@@ -443,9 +539,12 @@ export function initWebGLRenderer(G) {
   uniformWallAtlasEnabled = gl.getUniformLocation(program, 'uWallAtlasEnabled');
   uniformFloorAtlasEnabled = gl.getUniformLocation(program, 'uFloorAtlasEnabled');
   uniformCeilingAtlasEnabled = gl.getUniformLocation(program, 'uCeilingAtlasEnabled');
+  uniformDecalAtlasEnabled = gl.getUniformLocation(program, 'uDecalAtlasEnabled');
   uniformFloorEnabled = gl.getUniformLocation(program, 'uFloorEnabled');
   uniformFloorMaxDist = gl.getUniformLocation(program, 'uFloorMaxDist');
   uniformZMaxDist = gl.getUniformLocation(program, 'uZMaxDist');
+  uniformTime = gl.getUniformLocation(program, 'uTime');
+  uniformDecalQuality = gl.getUniformLocation(program, 'uDecalQuality');
 
   gl.bindBuffer(gl.ARRAY_BUFFER, glBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -459,12 +558,14 @@ export function initWebGLRenderer(G) {
   configureTexture(gl, glWallAtlasTexture);
   configureTexture(gl, glFloorAtlasTexture);
   configureTexture(gl, glCeilingAtlasTexture);
+  configureTexture(gl, glDecalAtlasTexture);
   configureTexture(gl, glMapTexture);
   configureTexture(gl, glZTexture);
 
   uploadFallbackTexture(gl, glWallAtlasTexture, [18, 52, 28, 255]);
   uploadFallbackTexture(gl, glFloorAtlasTexture, [12, 35, 20, 255]);
   uploadFallbackTexture(gl, glCeilingAtlasTexture, [8, 14, 10, 255]);
+  uploadFallbackTexture(gl, glDecalAtlasTexture, [0, 0, 0, 0]);
   uploadFallbackTexture(gl, glMapTexture, [0, 0, 0, 255]);
   uploadFallbackTexture(gl, glZTexture, [255, 0, 0, 255]);
 
@@ -610,6 +711,55 @@ function updateCeilingAtlasTexture(gl, ceilingAtlasReady, ceilingAtlasPixels, ce
   lastCeilingAtlasH = ceilingAtlasHeight;
 }
 
+function updateDecalAtlasTexture(gl, G) {
+  if (!glDecalAtlasTexture) return false;
+
+  const techReady = !!(G.lightPanelSpriteLoaded && G.lightPanelSpriteImage && !G.lightPanelSpriteError);
+  const neonReady = !!(G.neonPanelSpriteLoaded && G.neonPanelSpriteImage && !G.neonPanelSpriteError);
+  if (!techReady || !neonReady) {
+    return false;
+  }
+
+  const tech = G.lightPanelSpriteImage;
+  const neon = G.neonPanelSpriteImage;
+  if (!decalAtlasCanvas) {
+    decalAtlasCanvas = document.createElement('canvas');
+    decalAtlasCanvas.width = 256;
+    decalAtlasCanvas.height = 128;
+  }
+
+  if (lastDecalAtlasSourceA === tech && lastDecalAtlasSourceB === neon) {
+    return true;
+  }
+
+  const ctx = decalAtlasCanvas.getContext('2d');
+  if (!ctx) {
+    return false;
+  }
+
+  ctx.clearRect(0, 0, decalAtlasCanvas.width, decalAtlasCanvas.height);
+  ctx.imageSmoothingEnabled = true;
+
+  const techW = Math.max(1, ((tech.naturalWidth || tech.width || 0) / 2) | 0);
+  const techH = Math.max(1, (tech.naturalHeight || tech.height || 0) | 0);
+  const neonW = Math.max(1, ((neon.naturalWidth || neon.width || 0) / 2) | 0);
+  const neonH = Math.max(1, ((neon.naturalHeight || neon.height || 0) / 4) | 0);
+
+  // Technical panel at atlas tile 0
+  ctx.drawImage(tech, 0, 0, techW, techH, 0, 0, 128, 128);
+  // Neon panel at atlas tile 1
+  ctx.drawImage(neon, 0, 0, neonW, neonH, 128, 0, 128, 128);
+
+  gl.activeTexture(gl.TEXTURE6);
+  gl.bindTexture(gl.TEXTURE_2D, glDecalAtlasTexture);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, decalAtlasCanvas);
+
+  lastDecalAtlasSourceA = tech;
+  lastDecalAtlasSourceB = neon;
+  return true;
+}
+
 export function renderRaycastWebGL(G, params) {
   if (!G.webglEnabled || !glRef || !glProgram || !glDataTexture) {
     return false;
@@ -651,6 +801,8 @@ export function renderRaycastWebGL(G, params) {
     floorAtlasHeight,
     floorAtlasCols,
     floorAtlasRows,
+    nowMs,
+    decalQuality,
     ceilingAtlasReady,
     ceilingAtlasPixels,
     ceilingAtlasWidth,
@@ -712,6 +864,7 @@ export function renderRaycastWebGL(G, params) {
   updateWallAtlasTexture(gl, wallAtlasReady, wallAtlasCanvas);
   updateFloorAtlasTexture(gl, floorAtlasReady, floorAtlasPixels, floorAtlasWidth, floorAtlasHeight);
   updateCeilingAtlasTexture(gl, ceilingAtlasReady, ceilingAtlasPixels, ceilingAtlasWidth, ceilingAtlasHeight);
+  const decalEnabled = updateDecalAtlasTexture(gl, G);
   updateMapTexture(gl, tileFlat, tileMapW, tileMapH);
 
   gl.useProgram(glProgram);
@@ -737,6 +890,7 @@ export function renderRaycastWebGL(G, params) {
   gl.uniform1i(uniformMapTex, 3);
   gl.uniform1i(uniformZTex, 4);
   gl.uniform1i(uniformCeilingAtlasTex, 5);
+  gl.uniform1i(uniformDecalAtlasTex, 6);
 
   gl.uniform1f(uniformColumns, width);
   gl.uniform2f(uniformScreen, width, height);
@@ -751,9 +905,12 @@ export function renderRaycastWebGL(G, params) {
   gl.uniform1f(uniformWallAtlasEnabled, wallAtlasReady ? 1 : 0);
   gl.uniform1f(uniformFloorAtlasEnabled, floorAtlasReady ? 1 : 0);
   gl.uniform1f(uniformCeilingAtlasEnabled, ceilingAtlasReady ? 1 : 0);
+  gl.uniform1f(uniformDecalAtlasEnabled, decalEnabled ? 1 : 0);
   gl.uniform1f(uniformFloorEnabled, floorEnabled ? 1 : 0);
   gl.uniform1f(uniformFloorMaxDist, Math.max(1, floorMaxRowDist || 10));
   gl.uniform1f(uniformZMaxDist, Z_MAX_DIST);
+  gl.uniform1f(uniformTime, (nowMs || 0));
+  gl.uniform1f(uniformDecalQuality, Math.max(0, Math.min(2, decalQuality || 0)));
 
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   return true;

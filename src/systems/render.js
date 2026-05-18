@@ -139,6 +139,10 @@ let cachedCeilCtx = null;
 let panelMapCache = new Map();
 let lastDoorHash = -1;
 
+// ─── Neon device wall map cache (wallpanel/junction on WALL tiles) ────────────
+let neonWallMapCache = new Map(); // key=(tileY<<16)|tileX -> device
+let lastNeonDeviceHash = -1;
+
 // ─── FPS-adaptive rayStep EMA ────────────────────────────────────────────────
 let _emaFrameMs = 16.7;
 let _lastFrameTs = 0;
@@ -369,6 +373,14 @@ export function renderFrame(G) {
   }
   const panelMap = panelMapCache;
 
+  // ── Neon wall device map: rebuild when devices change ───────────────────
+  const _nHash = G.devices ? G.devices.length : 0;
+  if (_nHash !== lastNeonDeviceHash) {
+    neonWallMapCache = _buildNeonWallMap(G);
+    lastNeonDeviceHash = _nHash;
+  }
+  const neonWallMap = neonWallMapCache;
+
   const atlasReady = !!(G.wallAtlasLoaded && G.wallAtlasImage && !G.wallAtlasError);
   const wallAtlasReadyGL = webgl3D ? (atlasReady && _ensurePreparedWallAtlas(G)) : false;
   const floorAtlasReadyGL = webgl3D ? _ensureFloorAtlasPixels(G) : false;
@@ -376,6 +388,7 @@ export function renderFrame(G) {
   const floorPerf = _getFloorPerfSettings(G);
   const wallPerf = _getWallPerfSettings(G);
   const wallRayStep = webgl3D ? 1 : wallPerf.rayStep;
+  const decalQuality = G.wallRenderQuality === 'high' ? 2 : (G.wallRenderQuality === 'balanced' ? 1 : 0);
 
   // ── 1. Ceiling (cached gradient — only rebuilt when canvas height changes) ─
   if (!cachedCeilGrad || cachedCeilH !== halfH || cachedCeilCtx !== ctx) {
@@ -515,7 +528,7 @@ export function renderFrame(G) {
       colFace[outCol] = hitFace;
 
       // Collect tile hits for texture overlay
-      if (hitTile !== TILE_TYPES.WALL) {
+      if (hitTile !== TILE_TYPES.WALL || neonWallMap.has((mapY << 16) | mapX)) {
         const key = (mapY << 16) | mapX;
         const ex  = wallHitMap.get(key);
         if (!ex) {
@@ -565,6 +578,8 @@ export function renderFrame(G) {
     floorAtlasHeight,
     floorAtlasCols: FLOOR_ATLAS_COLS,
     floorAtlasRows: FLOOR_ATLAS_ROWS,
+    nowMs: _now,
+    decalQuality,
     ceilingAtlasReady: ceilingAtlasReadyGL,
     ceilingAtlasPixels,
     ceilingAtlasWidth,
@@ -589,7 +604,7 @@ export function renderFrame(G) {
     _drawWallAtlasColumns(G, ctx, W, atlasReady);
   }
   _drawTerminalSheetColumns(G, ctx, W, panelMap);
-  _drawWallTextures(G, ctx, wallHitMap, panelMap, W, H, halfH);
+  _drawWallTextures(G, ctx, wallHitMap, panelMap, neonWallMap, W, H, halfH);
 
   // ── 6. Sprite billboards ─────────────────────────────────────────────────
   _drawSprites(G, ctx, W, H, halfH, px, py, dirX, dirY, planeX, planeY, invDet);
@@ -909,6 +924,43 @@ function _drawCeilingTile(ctx, col, W, halfH, tileIndex) {
   ctx.putImageData(colImageData, col, 0);
 }
 
+// Projects a world point on the ceiling plane to 2D screen space.
+// Returns null if the point is behind the camera.
+function _projectCeilPt(wx, wy, px, py, inv, dirX, dirY, planeX, planeY, W, halfH) {
+  return _projectWorldPt(wx, wy, 1, px, py, inv, dirX, dirY, planeX, planeY, W, halfH);
+}
+
+function _projectWorldPt(wx, wy, wz, px, py, inv, dirX, dirY, planeX, planeY, W, halfH) {
+  const dx = wx - px, dy = wy - py;
+  const tY = inv * (-planeY * dx + planeX * dy);
+  if (tY <= 0.05) return null;
+  const tX = inv * (dirY * dx - dirX * dy);
+  return { sx: (W * 0.5) * (1 + tX / tY), sy: halfH - (halfH * wz) / tY };
+}
+
+// Draws a texture-mapped triangle using an affine canvas transform + clip.
+// Image pixels at (ix0,iy0),(ix1,iy1),(ix2,iy2) map to screen (sx0..sx2,sy0..sy2).
+function _drawTexTriangle(ctx, img, ix0, iy0, ix1, iy1, ix2, iy2, sx0, sy0, sx1, sy1, sx2, sy2) {
+  const du1 = ix1 - ix0, dv1 = iy1 - iy0, du2 = ix2 - ix0, dv2 = iy2 - iy0;
+  const ddx1 = sx1 - sx0, ddy1 = sy1 - sy0, ddx2 = sx2 - sx0, ddy2 = sy2 - sy0;
+  const det = du1 * dv2 - dv1 * du2;
+  if (Math.abs(det) < 1e-6) return;
+  const a = (ddx1 * dv2 - ddx2 * dv1) / det;
+  const b = (ddy1 * dv2 - ddy2 * dv1) / det;
+  const c = (ddx2 * du1 - ddx1 * du2) / det;
+  const d = (ddy2 * du1 - ddy1 * du2) / det;
+  const e = sx0 - a * ix0 - c * iy0;
+  const f = sy0 - b * ix0 - d * iy0;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(sx0, sy0); ctx.lineTo(sx1, sy1); ctx.lineTo(sx2, sy2);
+  ctx.closePath();
+  ctx.clip();
+  ctx.transform(a, b, c, d, e, f);
+  ctx.drawImage(img, 0, 0);
+  ctx.restore();
+}
+
 function _drawCeilingSpriteDevices(G, ctx, W, halfH, px, py, dirX, dirY, planeX, planeY, invDet) {
   if (!G.devices || G.devices.length === 0) return;
 
@@ -917,20 +969,17 @@ function _drawCeilingSpriteDevices(G, ctx, W, halfH, px, py, dirX, dirY, planeX,
     const nodeType = String(device.nodeType || '').toLowerCase();
     const isCam = type === 'cam' || type === 'camera';
     const isLightPanel = type === 'lightpanel' || (type === 'distract' && nodeType === 'lights');
-    const isNeonPanel = type === 'neonpanel' || (type === 'distract' && (nodeType === 'wallpanel' || nodeType === 'junction'));
-
-    if (!isCam && !isLightPanel && !isNeonPanel) continue;
+    if (!isCam && !isLightPanel) continue;
 
     const devX = Number(device.x || 0) + 0.5;
     const devY = Number(device.y || 0) + 0.5;
-    const dx = devX - px;
-    const dy = devY - py;
+    const cdx = devX - px, cdy = devY - py;
 
-    const transformX = invDet * (dirY * dx - dirX * dy);
-    const transformY = invDet * (-planeY * dx + planeX * dy);
+    const transformX = invDet * (dirY * cdx - dirX * cdy);
+    const transformY = invDet * (-planeY * cdx + planeX * cdy);
     if (transformY <= 0.12) continue;
 
-    const screenX = ((W / 2) * (1 + transformX / transformY));
+    const screenX = (W * 0.5) * (1 + transformX / transformY);
     const centerX = Math.max(0, Math.min(W - 1, screenX | 0));
     if (zBuffer && Number.isFinite(zBuffer[centerX]) && transformY > zBuffer[centerX] + 0.02) {
       continue;
@@ -956,29 +1005,68 @@ function _drawCeilingSpriteDevices(G, ctx, W, halfH, px, py, dirX, dirY, planeX,
       srcW = Math.max(1, ((spriteImage.naturalWidth || spriteImage.width || 0) / 2) | 0);
       srcH = Math.max(1, (spriteImage.naturalHeight || spriteImage.height || 0) | 0);
       srcX = (isOffline ? LIGHT_PANEL_SPRITE_HACKED : 0) * srcW;
-    } else {
-      if (!G.neonPanelSpriteLoaded || !G.neonPanelSpriteImage) continue;
-      spriteImage = G.neonPanelSpriteImage;
-      srcW = Math.max(1, ((spriteImage.naturalWidth || spriteImage.width || 0) / NEON_PANEL_SPRITE_COLS) | 0);
-      srcH = Math.max(1, ((spriteImage.naturalHeight || spriteImage.height || 0) / 4) | 0);
-      const frame = isOffline ? NEON_PANEL_SPRITE_OFFLINE : 0;
-      srcX = (frame % NEON_PANEL_SPRITE_COLS) * srcW;
-      srcY = ((frame / NEON_PANEL_SPRITE_COLS) | 0) * srcH;
     }
 
     if (!spriteImage || srcW <= 0 || srcH <= 0) continue;
 
-    const worldH = halfH * 2;
-    const drawH = Math.max(10, Math.min(worldH * 0.6, (worldH / Math.max(0.22, transformY)) * 0.2));
-    const drawW = drawH * (srcW / srcH);
-    const drawX = screenX - drawW * 0.5;
-    const ceilingAnchorY = halfH - (halfH / Math.max(0.22, transformY));
-    const drawY = ceilingAnchorY - drawH * 0.08;
+    let p00 = null;
+    let p10 = null;
+    let p01 = null;
+    let p11 = null;
 
-    if (drawX + drawW < 0 || drawX > W || drawY + drawH < 0 || drawY > halfH) continue;
+    if (isCam) {
+      // Camera hangs below the ceiling and is only partially billboarded.
+      // Keep a stable world axis so it does not flatten into the ceiling panel plane.
+      const toCamX = devX - px;
+      const toCamY = devY - py;
+      const facingX = Math.abs(toCamX) + Math.abs(toCamY) > 1e-6 ? toCamX / (Math.abs(toCamX) + Math.abs(toCamY)) : 1;
+      const facingY = Math.abs(toCamX) + Math.abs(toCamY) > 1e-6 ? toCamY / (Math.abs(toCamX) + Math.abs(toCamY)) : 0;
+      const lockX = Math.abs(facingX) >= Math.abs(facingY) ? Math.sign(facingX) || 1 : 0;
+      const lockY = Math.abs(facingY) > Math.abs(facingX) ? Math.sign(facingY) || 1 : 0;
+      const mix = 0.58;
+      const rightX = lockX * (1 - mix) + (-dirY) * mix;
+      const rightY = lockY * (1 - mix) + dirX * mix;
+      const rightLen = Math.hypot(rightX, rightY) || 1;
+      const normRightX = rightX / rightLen;
+      const normRightY = rightY / rightLen;
+      const halfW = 0.18;
+      const topZ = 1.0;
+      const botZ = 0.56;
+      p00 = _projectWorldPt(devX - normRightX * halfW, devY - normRightY * halfW, topZ, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH);
+      p10 = _projectWorldPt(devX + normRightX * halfW, devY + normRightY * halfW, topZ, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH);
+      p01 = _projectWorldPt(devX - normRightX * halfW, devY - normRightY * halfW, botZ, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH);
+      p11 = _projectWorldPt(devX + normRightX * halfW, devY + normRightY * halfW, botZ, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH);
+    } else {
+      // Light controller stays flush to the ceiling plane.
+      const hs = 0.28; // half-size in world units
+      p00 = _projectCeilPt(devX - hs, devY - hs, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH);
+      p10 = _projectCeilPt(devX + hs, devY - hs, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH);
+      p01 = _projectCeilPt(devX - hs, devY + hs, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH);
+      p11 = _projectCeilPt(devX + hs, devY + hs, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH);
+    }
+    if (!p00 || !p10 || !p01 || !p11) continue;
+
+    const minSX = Math.min(p00.sx, p10.sx, p01.sx, p11.sx);
+    const maxSX = Math.max(p00.sx, p10.sx, p01.sx, p11.sx);
+    const minSY = Math.min(p00.sy, p10.sy, p01.sy, p11.sy);
+    const maxSY = Math.max(p00.sy, p10.sy, p01.sy, p11.sy);
+    if (maxSX < 0 || minSX > W || maxSY < 0 || minSY > halfH) continue;
 
     ctx.globalAlpha = 0.92;
-    ctx.drawImage(spriteImage, srcX, srcY, srcW, srcH, drawX, drawY, drawW, drawH);
+    // Triangle 1 (UV: 00→10→01)
+    _drawTexTriangle(ctx, spriteImage,
+      srcX,        srcY,
+      srcX + srcW, srcY,
+      srcX,        srcY + srcH,
+      p00.sx, p00.sy, p10.sx, p10.sy, p01.sx, p01.sy
+    );
+    // Triangle 2 (UV: 10→11→01)
+    _drawTexTriangle(ctx, spriteImage,
+      srcX + srcW, srcY,
+      srcX + srcW, srcY + srcH,
+      srcX,        srcY + srcH,
+      p10.sx, p10.sy, p11.sx, p11.sy, p01.sx, p01.sy
+    );
     ctx.globalAlpha = 1;
   }
 }
@@ -1339,7 +1427,22 @@ function _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, pl
 }
 
 // ─── Wall texture overlays ────────────────────────────────────────────────────
-function _drawWallTextures(G, ctx, wallHitMap, panelMap, W, H, halfH) {
+function _buildNeonWallMap(G) {
+  const m = new Map();
+  if (!G.devices) return m;
+  for (const dev of G.devices) {
+    if (dev.type !== 'distract') continue;
+    const nt = dev.nodeType || '';
+    if (nt !== 'wallpanel' && nt !== 'junction') continue;
+    // device.x/y = wallTileX + 0.5 (added by createDistraction)
+    const tx = Math.floor(dev.x);
+    const ty = Math.floor(dev.y);
+    m.set((ty << 16) | tx, dev);
+  }
+  return m;
+}
+
+function _drawWallTextures(G, ctx, wallHitMap, panelMap, neonWallMap, W, H, halfH) {
   const terminalSheetReady = !!(G.terminalSheetLoaded && G.terminalSheetImage && !G.terminalSheetError);
   for (const [key, g] of wallHitMap) {
     const { hitTile, minCol, maxCol, drawStart, drawEnd, perpDist, mapX, mapY } = g;
@@ -1351,6 +1454,28 @@ function _drawWallTextures(G, ctx, wallHitMap, panelMap, W, H, halfH) {
 
     const fogF = Math.max(0, 1 - perpDist / 14);
     if (fogF <= 0.03) continue;
+
+    // Neon panel on regular WALL tile — draw before clip so we don't need switch
+    if (hitTile === TILE_TYPES.WALL) {
+      const neonDev = neonWallMap.get((mapY << 16) | mapX);
+      if (neonDev && G.neonPanelSpriteLoaded && G.neonPanelSpriteImage) {
+        const img = G.neonPanelSpriteImage;
+        const spW = img.naturalWidth || img.width || 0;
+        const spH = img.naturalHeight || img.height || 0;
+        const cellW = Math.max(1, (spW / NEON_PANEL_SPRITE_COLS) | 0);
+        const cellH = Math.max(1, (spH / 4) | 0);
+        const isOff = !!(neonDev.active || neonDev.hacked || neonDev.offline);
+        const frame = isOff ? NEON_PANEL_SPRITE_OFFLINE : 0;
+        const sx = (frame % NEON_PANEL_SPRITE_COLS) * cellW;
+        const sy = ((frame / NEON_PANEL_SPRITE_COLS) | 0) * cellH;
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, fogF * 1.2);
+        ctx.drawImage(img, sx, sy, cellW, cellH, minCol, drawStart, colW, rowH + 1);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+      continue;
+    }
 
     ctx.save();
     ctx.beginPath();
