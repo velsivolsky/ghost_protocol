@@ -253,6 +253,57 @@ function worldToFloorScreen(wx, wy, px, py, invDet, dirX, dirY, planeX, planeY, 
   return { x: (W / 2) * (1 + tX / tY), y: halfH + halfH / tY };
 }
 
+function _raycastWallDistance(tiles, x, y, angle, maxRange) {
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  let mapX = Math.floor(x);
+  let mapY = Math.floor(y);
+
+  const deltaX = dx === 0 ? 1e30 : Math.abs(1 / dx);
+  const deltaY = dy === 0 ? 1e30 : Math.abs(1 / dy);
+
+  let stepX;
+  let sideDistX;
+  if (dx < 0) {
+    stepX = -1;
+    sideDistX = (x - mapX) * deltaX;
+  } else {
+    stepX = 1;
+    sideDistX = (mapX + 1 - x) * deltaX;
+  }
+
+  let stepY;
+  let sideDistY;
+  if (dy < 0) {
+    stepY = -1;
+    sideDistY = (y - mapY) * deltaY;
+  } else {
+    stepY = 1;
+    sideDistY = (mapY + 1 - y) * deltaY;
+  }
+
+  let dist = 0;
+  for (let i = 0; i < 64 && dist <= maxRange; i += 1) {
+    if (sideDistX < sideDistY) {
+      dist = sideDistX;
+      sideDistX += deltaX;
+      mapX += stepX;
+    } else {
+      dist = sideDistY;
+      sideDistY += deltaY;
+      mapY += stepY;
+    }
+
+    if (dist > maxRange) break;
+    const tile = tiles?.[mapY]?.[mapX] ?? TILE_TYPES.WALL;
+    if (!IS_PASSABLE[tile]) {
+      return Math.max(0.05, dist - 0.03);
+    }
+  }
+
+  return maxRange;
+}
+
 // ─── Pre-build door-panel lookup ──────────────────────────────────────────────
 function _getDoorHash(G) {
   if (!G.doors || !tileFlat || tileFlat_mapW === 0) return 0;
@@ -1029,9 +1080,10 @@ function _drawCeilingSpriteDevices(G, ctx, W, halfH, px, py, dirX, dirY, planeX,
       const rightLen = Math.hypot(rightX, rightY) || 1;
       const normRightX = rightX / rightLen;
       const normRightY = rightY / rightLen;
-      const halfW = 0.18;
+      const camScale = 0.67; // ~1/3 smaller than before
+      const halfW = 0.18 * camScale;
       const topZ = 1.0;
-      const botZ = 0.56;
+      const botZ = 0.44; // increase vertical drop so the camera stops reading as flattened
       p00 = _projectWorldPt(devX - normRightX * halfW, devY - normRightY * halfW, topZ, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH);
       p10 = _projectWorldPt(devX + normRightX * halfW, devY + normRightY * halfW, topZ, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH);
       p01 = _projectWorldPt(devX - normRightX * halfW, devY - normRightY * halfW, botZ, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH);
@@ -1382,7 +1434,8 @@ function _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, pl
     const points = [{ x: cx, y: cy }];
     for (let i = 0; i <= steps; i++) {
       const a = facing - fovHalf + (i / steps) * fovHalf * 2;
-      points.push({ x: cx + Math.cos(a) * range, y: cy + Math.sin(a) * range });
+      const clippedRange = G.tiles ? _raycastWallDistance(G.tiles, cx, cy, a, range) : range;
+      points.push({ x: cx + Math.cos(a) * clippedRange, y: cy + Math.sin(a) * clippedRange });
     }
 
     const screenPts = points.map((p) =>
@@ -1454,28 +1507,6 @@ function _drawWallTextures(G, ctx, wallHitMap, panelMap, neonWallMap, W, H, half
 
     const fogF = Math.max(0, 1 - perpDist / 14);
     if (fogF <= 0.03) continue;
-
-    // Neon panel on regular WALL tile — draw before clip so we don't need switch
-    if (hitTile === TILE_TYPES.WALL) {
-      const neonDev = neonWallMap.get((mapY << 16) | mapX);
-      if (neonDev && G.neonPanelSpriteLoaded && G.neonPanelSpriteImage) {
-        const img = G.neonPanelSpriteImage;
-        const spW = img.naturalWidth || img.width || 0;
-        const spH = img.naturalHeight || img.height || 0;
-        const cellW = Math.max(1, (spW / NEON_PANEL_SPRITE_COLS) | 0);
-        const cellH = Math.max(1, (spH / 4) | 0);
-        const isOff = !!(neonDev.active || neonDev.hacked || neonDev.offline);
-        const frame = isOff ? NEON_PANEL_SPRITE_OFFLINE : 0;
-        const sx = (frame % NEON_PANEL_SPRITE_COLS) * cellW;
-        const sy = ((frame / NEON_PANEL_SPRITE_COLS) | 0) * cellH;
-        ctx.save();
-        ctx.globalAlpha = Math.min(1, fogF * 1.2);
-        ctx.drawImage(img, sx, sy, cellW, cellH, minCol, drawStart, colW, rowH + 1);
-        ctx.globalAlpha = 1;
-        ctx.restore();
-      }
-      continue;
-    }
 
     ctx.save();
     ctx.beginPath();
@@ -1799,6 +1830,16 @@ function _drawSprites(G, ctx, W, H, halfH, px, py, dirX, dirY, planeX, planeY, i
   sprites.sort((a, b) => b.dist - a.dist);
 
   for (const sp of sprites) {
+    if (sp.kind === 'dev' && sp.dev && (sp.dev.type === 'cam' || sp.dev.type === 'camera')) {
+      continue;
+    }
+    if (sp.kind === 'dev' && sp.dev) {
+      const nt = String(sp.dev.nodeType || '').toLowerCase();
+      if (sp.dev.type === 'distract' && nt === 'lights') {
+        continue;
+      }
+    }
+
     const { dx, dy } = sp;
     const transformX = invDet * ( dirY * dx - dirX * dy);
     const transformY = invDet * (-planeY * dx + planeX * dy);

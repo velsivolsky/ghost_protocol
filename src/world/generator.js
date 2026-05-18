@@ -933,7 +933,7 @@ function addDistractionNodes(tiles, rooms, protectedPoints, floorIdx) {
 		let nodeX = selected.x;
 		let nodeY = selected.y;
 
-		if (type === 'wallpanel') {
+		if (type === 'wallpanel' || type === 'junction') {
 			const wallMount = findAdjacentWallTile(tiles, selected.x, selected.y, protectedPoints);
 			if (!wallMount) {
 				continue;

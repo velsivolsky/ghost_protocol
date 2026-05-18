@@ -4,6 +4,7 @@ import { clamp, dst } from '../utils/math.js';
 import { floatMsg, log, rebuildList } from '../systems/ui.js';
 import { lineOfSight } from '../utils/los.js';
 import { findNextStep } from '../world/pathing.js';
+import { canWalk } from '../world/map.js';
 
 const TECHNICIAN_SPEED = 1.2;
 
@@ -166,7 +167,7 @@ export function tickTechnician(technician, dt) {
 	}
 
 	const patrolTarget = technician.patrolIndex % 2 === 0 ? technician.patrolA : technician.patrolB;
-	moveToward(technician, patrolTarget.x, patrolTarget.y, dt, 0.8);
+	moveToward(technician, patrolTarget.x, patrolTarget.y, dt, 0.4);
 
 	if (dst(technician, patrolTarget) < 0.35) {
 		technician.patrolIndex += 1;
@@ -195,9 +196,31 @@ function moveToward(technician, targetX, targetY, dt, speedFactor) {
 	const dy = stepTargetY - technician.y;
 	const length = Math.hypot(dx, dy) || 1;
 	const step = (TECHNICIAN_SPEED * speedFactor * dt) / 1000;
+	const moveStep = Math.min(step, length);
+	const moveX = (dx / length) * moveStep;
+	const moveY = (dy / length) * moveStep;
 
-	technician.x += (dx / length) * step;
-	technician.y += (dy / length) * step;
+	if (canOccupyNpc(G.tiles, technician.x + moveX, technician.y)) {
+		technician.x += moveX;
+	}
+
+	if (canOccupyNpc(G.tiles, technician.x, technician.y + moveY)) {
+		technician.y += moveY;
+	}
+}
+
+function canOccupyNpc(tiles, x, y) {
+	const left = x + 0.18;
+	const right = x + 0.82;
+	const top = y + 0.16;
+	const bottom = y + 0.84;
+
+	return (
+		canWalk(tiles, left, top) &&
+		canWalk(tiles, right, top) &&
+		canWalk(tiles, left, bottom) &&
+		canWalk(tiles, right, bottom)
+	);
 }
 
 function updateSpotting(technician, dt) {

@@ -265,23 +265,7 @@ function createProgram(gl) {
       float sideDim = mix(1.0, 0.58, step(0.5, side));
       col = col * fog * sideDim;
 
-      // Fully GPU-side, deterministic wall decals (no CPU metadata upload).
-      if (uDecalAtlasEnabled > 0.5 && uDecalQuality > 0.5 && abs(hitTile - 1.0) < 0.5) {
-        // Cheap deterministic seed per column-like bucket: no trig, no world-hit reconstruction.
-        vec2 seedKey = vec2(floor(xPx * 0.5), variant * 13.0 + side * 7.0 + floor(distN * 255.0));
-        float seed = hash12(seedKey);
-
-        float threshold = (uDecalQuality > 1.5) ? 0.915 : 0.965;
-        if (seed > threshold) {
-          float typeCode = (uDecalQuality > 1.5 && seed > 0.982) ? 2.0 : 1.0;
-          float emissive = (typeCode > 1.5) ? 0.70 : 0.02;
-          vec2 decalPos = vec2(
-            0.30 + 0.40 * hash12(seedKey + vec2(11.0, 3.0)),
-            0.24 + 0.50 * hash12(seedKey + vec2(5.0, 17.0))
-          );
-          col = applyDecal(col, vec2(wallU, wallV), decalPos, vec2(0.34, 0.28), typeCode, emissive, seed);
-        }
-      }
+      // Wall decals disabled: keep controller/neon visuals off wall pass.
 
       return col;
     }

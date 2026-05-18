@@ -159,7 +159,7 @@ export function tickGuard(guard, dt) {
 
   const playerMaxStep = (PLAYER_SPEED * dt) / 1000;
   const speedMultiplier = guard.motoricsResetT > 0 ? 0.25 : 1;
-  const patrolSpeed = playerMaxStep * 0.28 * speedMultiplier;
+  const patrolSpeed = playerMaxStep * 0.14 * speedMultiplier;
   const searchSpeed = playerMaxStep * 0.7 * speedMultiplier;
   const chaseSpeed = playerMaxStep * speedMultiplier;
 
@@ -278,14 +278,28 @@ function moveWithPath(guard, targetX, targetY, speed) {
   const vy = dy / len;
   const step = Math.min(speed, 0.23);
 
-  if (canWalk(G.tiles, guard.x + vx * step, guard.y)) {
+  if (canOccupyNpc(G.tiles, guard.x + vx * step, guard.y)) {
     guard.x += vx * step;
   }
 
-  if (canWalk(G.tiles, guard.x, guard.y + vy * step)) {
+  if (canOccupyNpc(G.tiles, guard.x, guard.y + vy * step)) {
     guard.y += vy * step;
   }
 
   guard.facing = Math.atan2(vy, vx);
   return false;
+}
+
+function canOccupyNpc(tiles, x, y) {
+  const left = x + 0.18;
+  const right = x + 0.82;
+  const top = y + 0.16;
+  const bottom = y + 0.84;
+
+  return (
+    canWalk(tiles, left, top) &&
+    canWalk(tiles, right, top) &&
+    canWalk(tiles, left, bottom) &&
+    canWalk(tiles, right, bottom)
+  );
 }
