@@ -325,6 +325,7 @@ export function initWaveState({ wave, credits, map, devices }) {
     P: {
       x: spawn.x + 2.5,
       y: spawn.y + 3.5,
+      angle: 0,
       hp: 100,
       mhp: 100,
       bw: 100,
@@ -391,6 +392,7 @@ export function initFloorState({ map, devices }) {
     P: {
       x: map.rooms[0].x + 2.5,
       y: map.rooms[0].y + 3.5,
+      angle: prev.angle || 0,
       hp: prev.hp,
       mhp: prev.mhp,
       bw: Math.min(prev.mbw, prev.bw + 15),

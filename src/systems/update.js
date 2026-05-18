@@ -2,6 +2,7 @@ import {
 	EXFIL_DISTANCE,
 	MAIN_HACK_DISTANCE,
 	PLAYER_SPEED,
+	ROTATION_SPEED,
 	TILE_TYPES,
 } from '../core/constants.js';
 import { G, byType, initFloorState } from '../core/state.js';
@@ -292,22 +293,37 @@ function updatePlayerMovement(dt) {
 		return false;
 	}
 
-	let dx = 0;
-	let dy = 0;
+	const angle = G.P.angle || 0;
 
-	if (G.keys.ArrowUp || G.keys.w || G.keys.W) dy = -1;
-	if (G.keys.ArrowDown || G.keys.s || G.keys.S) dy = 1;
-	if (G.keys.ArrowLeft || G.keys.a || G.keys.A) dx = -1;
-	if (G.keys.ArrowRight || G.keys.d || G.keys.D) dx = 1;
+	// Keyboard rotation (Arrow Left / Right) — fallback when no pointer lock
+	if (G.keys.ArrowLeft) G.P.angle -= (ROTATION_SPEED * dt) / 1000;
+	if (G.keys.ArrowRight) G.P.angle += (ROTATION_SPEED * dt) / 1000;
 
-	if (dx && dy) {
-		dx *= 0.707;
-		dy *= 0.707;
+	// FPS movement: W/S = forward/back along facing angle, A/D = strafe
+	let fwd = 0;
+	let strafe = 0;
+
+	if (G.keys.ArrowUp || G.keys.w || G.keys.W) fwd = 1;
+	if (G.keys.ArrowDown || G.keys.s || G.keys.S) fwd = -1;
+	if (G.keys.a || G.keys.A) strafe = -1;
+	if (G.keys.d || G.keys.D) strafe = 1;
+
+	if (fwd !== 0 && strafe !== 0) {
+		fwd *= 0.707;
+		strafe *= 0.707;
 	}
+
+	const dirX = Math.cos(angle);
+	const dirY = Math.sin(angle);
+	const perpX = -dirY;
+	const perpY = dirX;
+
+	const dx = dirX * fwd + perpX * strafe;
+	const dy = dirY * fwd + perpY * strafe;
 
 	const speed = (PLAYER_SPEED * dt) / 1000;
 
-	if (dx || dy) {
+	if (dx !== 0 || dy !== 0) {
 		const moveX = dx * speed;
 		const moveY = dy * speed;
 		const steps = Math.max(1, Math.ceil(Math.max(Math.abs(moveX), Math.abs(moveY)) / 0.08));
@@ -326,6 +342,9 @@ function updatePlayerMovement(dt) {
 
 		return true;
 	}
+
+	// Return true if rotation happened (to trigger visibility update)
+	if (G.keys.ArrowLeft || G.keys.ArrowRight) return true;
 
 	return false;
 }

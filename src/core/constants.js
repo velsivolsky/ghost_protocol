@@ -24,3 +24,9 @@ export const TILE_TYPES = {
 
 export const MAIN_HACK_DISTANCE = 1.8;
 export const EXFIL_DISTANCE = 1.2;
+
+// Raycaster / FPS renderer
+export const FOV = Math.PI / 2.5;          // ~72 degrees
+export const HALF_FOV = FOV / 2;
+export const ROTATION_SPEED = 2.2;         // rad/s for keyboard rotation
+export const MOUSE_SENSITIVITY = 0.0022;   // rad per pixel of mouse movement

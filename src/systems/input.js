@@ -1,5 +1,5 @@
 import { G } from '../core/state.js';
-import { TILE, TILE_TYPES } from '../core/constants.js';
+import { MOUSE_SENSITIVITY } from '../core/constants.js';
 import { closeCtx, handleCanvasClick } from './hacking.js';
 import {
   autocompleteTerminalInput,
@@ -9,6 +9,7 @@ import {
 } from './terminalRuntime.js';
 
 let bound = false;
+let pointerLocked = false;
 
 export function bindInput() {
   if (bound) {
@@ -45,6 +46,9 @@ export function bindInput() {
 
     if (event.key === 'Escape') {
       closeCtx();
+      if (pointerLocked) {
+        document.exitPointerLock();
+      }
     }
   });
 
@@ -58,120 +62,38 @@ export function bindInput() {
     }
   });
 
-  G.canvas.addEventListener('click', handleCanvasClick);
-  G.canvas.addEventListener('mousemove', handleCanvasHover);
-  G.canvas.addEventListener('mouseleave', clearCanvasHover);
-}
-
-function clearCanvasHover() {
-  G.hoverInfo = null;
-}
-
-function handleCanvasHover(event) {
-  if (!G.P || G.dead || G.cleared) {
-    G.hoverInfo = null;
-    return;
-  }
-
-  const rect = G.canvas.getBoundingClientRect();
-  const worldX = (event.clientX - rect.left) / TILE + G.cam.x;
-  const worldY = (event.clientY - rect.top) / TILE + G.cam.y;
-  const tileX = worldX | 0;
-  const tileY = worldY | 0;
-  const tile = G.tiles[tileY]?.[tileX];
-  const tileKey = `${tileX},${tileY}`;
-  const knownTile = G.visible.has(tileKey) || G.explored.has(tileKey);
-
-  G.hoverScreen = {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
-  };
-
-  for (const device of G.devices) {
-    const deviceKey = `${device.x | 0},${device.y | 0}`;
-    const knownDevice = G.visible.has(deviceKey) || G.seenDevices.has(device.id);
-
-    if (!knownDevice) {
-      continue;
-    }
-
-    if (Math.abs(device.x - worldX) < 0.8 && Math.abs(device.y - worldY) < 0.8) {
-      const base = device.desc || getDeviceLabel(device.type);
-      G.hoverInfo = { label: withNetworkName(base, device.networkName || device.id || device.type), type: device.type };
+  // Canvas click: request pointer lock (FPS mode) when game is active
+  G.canvas.addEventListener('click', (event) => {
+    if (!G.P || G.dead || G.cleared || G.menuActive) {
+      handleCanvasClick(event);
       return;
     }
-  }
+    if (!pointerLocked) {
+      G.canvas.requestPointerLock();
+    } else {
+      handleCanvasClick(event);
+    }
+  });
 
-  if (!knownTile) {
-    G.hoverInfo = null;
-    return;
-  }
+  // Pointer lock change
+  document.addEventListener('pointerlockchange', () => {
+    pointerLocked = document.pointerLockElement === G.canvas;
+    // Show/hide lock hint
+    const hint = document.getElementById('pointer-lock-hint');
+    if (hint) {
+      hint.style.display = pointerLocked ? 'none' : 'flex';
+    }
+  });
 
-  for (const terminal of G.sideTerminals) {
-    if (terminal.x === tileX && terminal.y === tileY) {
-      G.hoverInfo = {
-        label: withNetworkName(terminal.desc || 'Terminal poboczny', terminal.networkName || terminal.id || 'node_side'),
-        type: 'sterm',
-      };
+  // Mouse look — only active when pointer is locked and terminal closed
+  document.addEventListener('mousemove', (event) => {
+    if (!pointerLocked || !G.P || isTerminalOverlayOpen()) {
       return;
     }
-  }
-
-  for (const panel of G.wallTerminals) {
-    if (panel.x === tileX && panel.y === tileY) {
-      G.hoverInfo = {
-        label: withNetworkName(panel.desc || 'Panel drzwi', panel.networkName || panel.id || 'panel'),
-        type: 'wterm',
-      };
-      return;
-    }
-  }
-
-  if (tile === TILE_TYPES.MAIN_TERMINAL) {
-    G.hoverInfo = {
-      label: withNetworkName('Terminal glowny', G.mainTerminal?.networkName || G.mainTerminal?.id || 'node_main'),
-      type: 'mainterm',
-    };
-    return;
-  }
-
-  if (tile === TILE_TYPES.DOOR_CLOSED || tile === TILE_TYPES.DOOR_OPEN) {
-    const door = G.doors.find((item) => item.x === tileX && item.y === tileY);
-    G.hoverInfo = { label: withNetworkName('Drzwi', door?.id || 'door'), type: 'door' };
-    return;
-  }
-
-  if (tile === TILE_TYPES.HIDE_SPOT) {
-    G.hoverInfo = { label: 'Safe spot', type: 'hide' };
-    return;
-  }
-
-  if (tile === TILE_TYPES.STAIR_UP) {
-    G.hoverInfo = { label: 'Winda (up-link)', type: 'stair-up' };
-    return;
-  }
-
-  if (tile === TILE_TYPES.STAIR_DOWN) {
-    G.hoverInfo = { label: 'Winda (down-link)', type: 'stair-down' };
-    return;
-  }
-
-  G.hoverInfo = null;
+    G.P.angle += event.movementX * MOUSE_SENSITIVITY;
+  });
 }
 
-function getDeviceLabel(type) {
-  if (type === 'cam') return 'Kamera';
-  if (type === 'guard') return 'Straznik';
-  if (type === 'drone') return 'Dron';
-  if (type === 'tech') return 'Technik';
-  if (type === 'distract') return 'Wezel dystrakcji';
-  return 'Obiekt';
-}
-
-function withNetworkName(label, networkName) {
-  const base = String(label || '').trim();
-  const net = String(networkName || '').trim();
-  if (!base) return net;
-  if (!net) return base;
-  return `${base} (${net})`;
+export function isPointerLocked() {
+  return pointerLocked;
 }

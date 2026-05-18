@@ -12,7 +12,7 @@ import { bindInput } from '../systems/input.js';
 import { resetOverlays, updateMissionText } from '../systems/mission.js';
 import { clearLog, bindUI, log, rebuildList, refreshHUD, syncZoneLabel } from '../systems/ui.js';
 import { spawnEntities, update } from '../systems/update.js';
-import { render } from '../systems/render.js';
+import { initRenderer, renderFrame } from '../systems/render.js';
 import { updateVisibility } from '../systems/visibility.js';
 import { initAudio, updateAudio, resetAudio, primeAudioSettings } from '../systems/audio.js';
 import {
@@ -1330,7 +1330,7 @@ function startTutorialRun() {
   log('Tryb treningowy online.', 'ok');
   log('Tutorial obejmuje pelny flow: dystrakcje, stealth, side nodes, fail/success na main node i winde.', 'ok');
   log('Wpisz tutorial w live terminalu i realizuj kroki sekwencyjnie.', 'ok');
-  render();
+  renderFrame(G);
 }
 
 function createTutorialDevices(map) {
@@ -1392,6 +1392,7 @@ export function boot() {
   G.ctx.imageSmoothingEnabled = false;
 
   resize();
+  initRenderer();
 
   if (!started) {
     started = true;
@@ -1515,7 +1516,7 @@ export function startRun(wave, credits) {
   log(`Operator: ${operator ? operator.alias : 'N/A'}`, 'ok');
   log('System online. Infiltruj.', 'ok');
   log('Uzyj TAB i live terminal overlay do hackowania.');
-  render();
+  renderFrame(G);
 }
 
 function startLoop() {
@@ -1528,7 +1529,7 @@ function startLoop() {
     update(dt);
     updateVisibility();
     updateAudio();
-    render();
+    renderFrame(G);
     updateAmbientBg();
 
     requestAnimationFrame(loop);
