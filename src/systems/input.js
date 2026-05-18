@@ -1,6 +1,7 @@
 import { G } from '../core/state.js';
 import { MOUSE_SENSITIVITY } from '../core/constants.js';
 import { closeCtx, handleCanvasClick } from './hacking.js';
+import { cycleWallRenderQuality, setWallRenderQuality } from './render.js';
 import {
   autocompleteTerminalInput,
   closeTerminalOverlay,
@@ -39,6 +40,24 @@ export function bindInput() {
       event.preventDefault();
       closeTerminalOverlay();
       closeCtx();
+      return;
+    }
+
+    if (event.key === 'F6') {
+      event.preventDefault();
+      cycleWallRenderQuality(G);
+      return;
+    }
+
+    if (event.key === 'F7') {
+      event.preventDefault();
+      setWallRenderQuality(G, 'fast');
+      return;
+    }
+
+    if (event.key === 'F8') {
+      event.preventDefault();
+      setWallRenderQuality(G, 'balanced');
       return;
     }
 

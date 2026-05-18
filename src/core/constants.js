@@ -1,6 +1,15 @@
 export const TILE = 35;
 export const MAP_W = 38;
 export const MAP_H = 28;
+export const WALL_ATLAS_SRC = 'assets/tilesets/walls.png';
+export const WALL_ATLAS_TILE_SIZE = 64;
+export const WALL_ATLAS_COLS = 3;
+export const WALL_ATLAS_ROWS = 3;
+export const WALL_ATLAS_VARIANTS = WALL_ATLAS_COLS * WALL_ATLAS_ROWS;
+export const FLOOR_ATLAS_SRC = 'assets/tilesets/floor.png';
+export const FLOOR_ATLAS_COLS = 3;
+export const FLOOR_ATLAS_ROWS = 3;
+export const FLOOR_ATLAS_VARIANTS = FLOOR_ATLAS_COLS * FLOOR_ATLAS_ROWS;
 export const HUD_HEIGHT = 36;
 export const HACK_RANGE = 4.5;
 export const PLAYER_SPEED = 3.2;

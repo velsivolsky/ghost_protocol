@@ -90,7 +90,7 @@ function getSpawnRooms(rooms) {
 }
 
 export function update(dt) {
-	if (!G.P || G.dead || G.cleared) {
+	if (!G.P || G.dead || G.cleared || G.menuActive) {
 		return;
 	}
 

@@ -1,6 +1,6 @@
 import { G, initWaveState } from './state.js';
 import { loadHubState, saveHubState } from './persistence.js';
-import { HUD_HEIGHT } from './constants.js';
+import { FLOOR_ATLAS_SRC, HUD_HEIGHT, WALL_ATLAS_SRC } from './constants.js';
 import { generateMultiFloorMap, generateTutorialMap } from '../world/generator.js';
 import { createCamera } from '../entities/camera.js';
 import { createGuard } from '../entities/guard.js';
@@ -72,6 +72,46 @@ let mainMenuClickSfxBound = false;
 
 const INTEL_HOST_PICKER_VIEW = '__intel_host_picker__';
 const MAIN_MENU_CLICK_SFX_PATH = 'assets/sfx/button.wav';
+
+function initWallAtlas() {
+  const image = new Image();
+
+  G.wallAtlasImage = image;
+  G.wallAtlasLoaded = false;
+  G.wallAtlasError = false;
+
+  image.onload = () => {
+    G.wallAtlasLoaded = true;
+    G.wallAtlasError = false;
+  };
+
+  image.onerror = () => {
+    G.wallAtlasLoaded = false;
+    G.wallAtlasError = true;
+  };
+
+  image.src = WALL_ATLAS_SRC;
+}
+
+function initFloorAtlas() {
+  const image = new Image();
+
+  G.floorAtlasImage = image;
+  G.floorAtlasLoaded = false;
+  G.floorAtlasError = false;
+
+  image.onload = () => {
+    G.floorAtlasLoaded = true;
+    G.floorAtlasError = false;
+  };
+
+  image.onerror = () => {
+    G.floorAtlasLoaded = false;
+    G.floorAtlasError = true;
+  };
+
+  image.src = FLOOR_ATLAS_SRC;
+}
 
 function playMainMenuClickSfx() {
   if (!G.audioEnabled) return;
@@ -1390,6 +1430,8 @@ export function boot() {
   G.canvas = G.dom.canvas;
   G.ctx = G.canvas.getContext('2d');
   G.ctx.imageSmoothingEnabled = false;
+  initWallAtlas();
+  initFloorAtlas();
 
   resize();
   initRenderer();
@@ -1525,6 +1567,14 @@ function startLoop() {
   function loop(ts) {
     const dt = Math.min(ts - last, 50);
     last = ts;
+
+    if (G.menuActive) {
+      updateAudio();
+      updateAmbientBg();
+
+      requestAnimationFrame(loop);
+      return;
+    }
 
     update(dt);
     updateVisibility();

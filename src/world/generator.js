@@ -1,4 +1,4 @@
-import { MAP_H, MAP_W, TILE_TYPES } from '../core/constants.js';
+import { MAP_H, MAP_W, TILE_TYPES, WALL_ATLAS_VARIANTS } from '../core/constants.js';
 
 // Multi-floor map generator
 export function generateMultiFloorMap(floorCount = 3) {
@@ -281,9 +281,11 @@ export function generateMap(opts = {}) {
 
 	const distractionNodes = addDistractionNodes(tiles, rooms, [entrance, mainTerminal, ...sideTerminals], opts.floorIdx || 0);
 	ensureCriticalPaths(tiles, entrance, mainTerminal, sideTerminals, distractionNodes);
+	const wallVariants = buildWallVariants(tiles);
 
 	return {
 		tiles,
+		wallVariants,
 		rooms,
 		entrance,
 		mainTerminal,
@@ -501,9 +503,11 @@ export function generateTutorialMap() {
 	tiles[hideSpots[0].y][hideSpots[0].x] = TILE_TYPES.HIDE_SPOT;
 	tiles[4][33] = TILE_TYPES.STAIR_UP;
 	tiles[20][4] = TILE_TYPES.STAIR_DOWN;
+	const wallVariants = buildWallVariants(tiles);
 
 	return {
 		tiles,
+		wallVariants,
 		rooms,
 		entrance,
 		mainTerminal,
@@ -600,6 +604,12 @@ function makeNetworkName(prefix, floorIdx, ordinal) {
 
 function pick(values) {
 	return values[(Math.random() * values.length) | 0];
+}
+
+function buildWallVariants(tiles) {
+	return tiles.map((row) =>
+		row.map((tile) => (tile === TILE_TYPES.WALL ? ((Math.random() * WALL_ATLAS_VARIANTS) | 0) : 0))
+	);
 }
 
 function placeDebugMainTerminal(tiles, spawn, entrance) {
