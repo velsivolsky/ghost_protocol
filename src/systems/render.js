@@ -10,6 +10,9 @@
  */
 
 import {
+  CEILING_ATLAS_COLS,
+  CEILING_ATLAS_ROWS,
+  CEILING_ATLAS_VARIANTS,
   FLOOR_ATLAS_COLS,
   FLOOR_ATLAS_ROWS,
   FLOOR_ATLAS_VARIANTS,
@@ -20,6 +23,8 @@ import {
   WALL_ATLAS_ROWS,
   WALL_ATLAS_VARIANTS,
 } from '../core/constants.js';
+import { renderRaycastWebGL } from './renderWebGL.js';
+import { lineOfSight } from '../utils/los.js';
 
 // ─── Precomputed module-level constants ────────────────────────────────────────
 // Plane magnitude is a constant derived from the fixed FOV — compute once
@@ -51,6 +56,17 @@ WALL_BASE_R[13] = 70;  WALL_BASE_G[13] = 45;  WALL_BASE_B[13] = 0;  // CODE_TERM
 // shade range 0.00–0.72 in 0.01 steps → index = Math.min(72, (shade*100+0.5)|0)
 const SHADE_STRINGS = new Array(73);
 for (let _si = 0; _si <= 72; _si++) SHADE_STRINGS[_si] = `rgba(0,0,0,${(_si / 100).toFixed(2)})`;
+const GUARD_DIR_ORDER = ['S', 'SE', 'E', 'NE', 'N', 'NW', 'W', 'SW'];
+const FACE_N = 0;
+const FACE_E = 1;
+const FACE_S = 2;
+const FACE_W = 3;
+const CONSOLE_TILE_SIZE = 128;
+const CONSOLE_FACE_SIDE_A = 0;
+const CONSOLE_FACE_SIDE_B = 1;
+const CONSOLE_FACE_BACK = 2;
+const CONSOLE_FACE_FRONT = 3;
+const CONSOLE_STATE = { HACKED: 0, LOCKED: 1, DEPLETED: 2 };
 
 // ─── Z-buffer ─────────────────────────────────────────────────────────────────
 let zBuffer = null;
@@ -71,6 +87,12 @@ let floorAtlasPixels = null;
 let floorAtlasWidth = 0;
 let floorAtlasHeight = 0;
 let floorAtlasTileW = 0;
+let ceilingAtlasSource = null;
+let ceilingAtlasPixels = null;
+let ceilingAtlasWidth = 0;
+let ceilingAtlasHeight = 0;
+let ceilingAtlasTileW = 0;
+let ceilingAtlasTileH = 0;
 let floorAtlasTileH = 0;
 let preparedWallAtlasSource = null;
 let preparedWallAtlasSourceW = 0;
@@ -91,6 +113,7 @@ let colMapX = null;
 let colMapY = null;
 let colTexU = null;
 let colSide = null;
+let colFace = null;
 
 // ─── Flat map cache (rebuilt lazily when G.tiles reference changes) ───────────
 let tileFlat = null;         // Int8Array — row-major flat copy of G.tiles
@@ -258,6 +281,9 @@ export function renderFrame(G) {
   const W     = G.canvas.width;
   const H     = G.canvas.height;
   const halfH = H >> 1;
+  const webgl3D = !!(G.webglEnabled && G.gl && G.glCanvas);
+
+  ctx.clearRect(0, 0, W, H);
 
   // ── FPS-adaptive EMA (exponential moving average of frame delta) ─────────
   const _now = performance.now();
@@ -279,6 +305,7 @@ export function renderFrame(G) {
     colMapY = new Int16Array(W);
     colTexU = new Float32Array(W);
     colSide = new Uint8Array(W);
+    colFace = new Uint8Array(W);
     for (let i = 0; i < W; i += 1) {
       camXCache[i] = (2 * i) / W - 1;
       colHitTile[i] = -1;
@@ -339,7 +366,11 @@ export function renderFrame(G) {
   const panelMap = panelMapCache;
 
   const atlasReady = !!(G.wallAtlasLoaded && G.wallAtlasImage && !G.wallAtlasError);
+  const wallAtlasReadyGL = webgl3D ? (atlasReady && _ensurePreparedWallAtlas(G)) : false;
+  const floorAtlasReadyGL = webgl3D ? _ensureFloorAtlasPixels(G) : false;
+  const floorPerf = _getFloorPerfSettings(G);
   const wallPerf = _getWallPerfSettings(G);
+  const wallRayStep = webgl3D ? 1 : wallPerf.rayStep;
 
   // ── 1. Ceiling (cached gradient — only rebuilt when canvas height changes) ─
   if (!cachedCeilGrad || cachedCeilH !== halfH || cachedCeilCtx !== ctx) {
@@ -350,12 +381,25 @@ export function renderFrame(G) {
     cachedCeilH = halfH;
     cachedCeilCtx = ctx;
   }
-  ctx.fillStyle = cachedCeilGrad;
-  ctx.fillRect(0, 0, W, halfH);
+  if (!webgl3D) {
+    // Draw ceiling with atlas texture if available
+    const ceilingReady = _ensureCeilingAtlasPixels(G);
+    if (ceilingReady) {
+      const now = Date.now();
+      for (let col = 0; col < W; col++) {
+        const tileIndex = _getCeilingTileIndex(col, now);
+        _drawCeilingTile(ctx, col, W, halfH, tileIndex);
+      }
+    } else {
+      // Fallback to gradient if atlas not ready
+      ctx.fillStyle = cachedCeilGrad;
+      ctx.fillRect(0, 0, W, halfH);
+    }
 
-  // ── 2. Floor ─────────────────────────────────────────────────────────────
-  ctx.fillStyle = '#040b05';
-  ctx.fillRect(0, halfH, W, H - halfH);
+    // ── 2. Floor ───────────────────────────────────────────────────────────
+    ctx.fillStyle = '#040b05';
+    ctx.fillRect(0, halfH, W, H - halfH);
+  }
 
   // ── 3. DDA raycasting ────────────────────────────────────────────────────
   if (W !== lastW || H !== lastH || !wallImageData || !wallPixels) {
@@ -368,8 +412,8 @@ export function renderFrame(G) {
   // wallHitMap: numeric key -> hit info for texture overlay
   const wallHitMap = new Map();
 
-  for (let col = 0; col < W; col += wallPerf.rayStep) {
-    const sampleCol = Math.min(W - 1, col + ((wallPerf.rayStep - 1) >> 1));
+  for (let col = 0; col < W; col += wallRayStep) {
+    const sampleCol = Math.min(W - 1, col + ((wallRayStep - 1) >> 1));
     const camX = camXCache[sampleCol];
     const rayDirX = dirX + planeX * camX;
     const rayDirY = dirY + planeY * camX;
@@ -403,7 +447,7 @@ export function renderFrame(G) {
     }
 
     if (!hit) {
-      const colEnd = Math.min(W, col + wallPerf.rayStep);
+      const colEnd = Math.min(W, col + wallRayStep);
       for (let outCol = col; outCol < colEnd; outCol += 1) {
         zBuffer[outCol] = 1e30;
         colHitTile[outCol] = -1;
@@ -413,7 +457,7 @@ export function renderFrame(G) {
 
     const perpDist  = side === 0 ? sideDistX - deltaDistX : sideDistY - deltaDistY;
     const renderDist = Math.max(0.08, perpDist);
-    const colEnd = Math.min(W, col + wallPerf.rayStep);
+    const colEnd = Math.min(W, col + wallRayStep);
     for (let outCol = col; outCol < colEnd; outCol += 1) {
       zBuffer[outCol] = perpDist;
     }
@@ -438,7 +482,7 @@ export function renderFrame(G) {
     const fb = Math.min(255, (bb * sideDim * fogF) | 0) + glow;
 
     const texturedWall = atlasReady && hitTile === TILE_TYPES.WALL;
-    if (!texturedWall) {
+    if (!webgl3D && !texturedWall) {
       for (let outCol = col; outCol < colEnd; outCol += 1) {
         for (let y = drawStart; y <= drawEnd; y++) {
           const idx = (y * W + outCol) * 4;
@@ -450,6 +494,10 @@ export function renderFrame(G) {
       }
     }
 
+    const hitFace = side === 0
+      ? (rayDirX > 0 ? FACE_W : FACE_E)
+      : (rayDirY > 0 ? FACE_N : FACE_S);
+
     for (let outCol = col; outCol < colEnd; outCol += 1) {
       colHitTile[outCol] = hitTile;
       colDrawStart[outCol] = drawStart;
@@ -459,6 +507,7 @@ export function renderFrame(G) {
       colMapY[outCol] = mapY;
       colTexU[outCol] = wallX;
       colSide[outCol] = side;
+      colFace[outCol] = hitFace;
 
       // Collect tile hits for texture overlay
       if (hitTile !== TILE_TYPES.WALL) {
@@ -475,14 +524,60 @@ export function renderFrame(G) {
     }
   }
 
-  ctx.putImageData(wallImageData, 0, 0);
-  _drawTexturedFloor(G, ctx, W, H, halfH, px, py, dirX, dirY, planeX, planeY);
+  if (webgl3D && renderRaycastWebGL(G, {
+    width: W,
+    height: H,
+    halfH,
+    drawStart: colDrawStart,
+    drawEnd: colDrawEnd,
+    perpDist: colPerpDist,
+    side: colSide,
+    texU: colTexU,
+    hitTile: colHitTile,
+    mapX: colMapX,
+    mapY: colMapY,
+    zBuffer,
+    wallVariantsFlat,
+    wallVariantsFlatW: wallVariantsFlat_W,
+    tileFlat,
+    tileMapW: tileFlat_mapW,
+    tileMapH: tileFlat_mapH,
+    playerX: px,
+    playerY: py,
+    dirX,
+    dirY,
+    planeX,
+    planeY,
+    wallAtlasReady: wallAtlasReadyGL,
+    wallAtlasCanvas: preparedWallAtlasCanvas,
+    wallAtlasCols: WALL_ATLAS_COLS,
+    wallAtlasRows: WALL_ATLAS_ROWS,
+    floorEnabled: floorPerf.enabled,
+    floorMaxRowDist: floorPerf.maxRowDist,
+    floorAtlasReady: floorAtlasReadyGL,
+    floorAtlasPixels,
+    floorAtlasWidth,
+    floorAtlasHeight,
+    floorAtlasCols: FLOOR_ATLAS_COLS,
+    floorAtlasRows: FLOOR_ATLAS_ROWS,
+  })) {
+    // WebGL rendered the base 3D layer; keep 2D for overlays, sprites and HUD.
+  } else {
+    ctx.putImageData(wallImageData, 0, 0);
+    _drawTexturedFloor(G, ctx, W, H, halfH, px, py, dirX, dirY, planeX, planeY);
+  }
+
+  _drawLightingOverlay(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, planeX, planeY);
+  _drawCeilingSpriteDevices(G, ctx, W, halfH, px, py, dirX, dirY, planeX, planeY, invDet);
 
   // ── 4. Camera FOV floor cones ────────────────────────────────────────────
   _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, planeX, planeY);
 
   // ── 5. Wall texture overlays ─────────────────────────────────────────────
-  _drawWallAtlasColumns(G, ctx, W, atlasReady);
+  if (!webgl3D) {
+    _drawWallAtlasColumns(G, ctx, W, atlasReady);
+  }
+  _drawTerminalSheetColumns(G, ctx, W, panelMap);
   _drawWallTextures(G, ctx, wallHitMap, panelMap, W, H, halfH);
 
   // ── 6. Sprite billboards ─────────────────────────────────────────────────
@@ -615,6 +710,71 @@ function _drawWallAtlasColumns(G, ctx, W, atlasReady) {
   }
 }
 
+function _isTerminalWallTile(tile) {
+  return (
+    tile === TILE_TYPES.MAIN_TERMINAL
+    || tile === TILE_TYPES.SIDE_TERMINAL
+    || tile === TILE_TYPES.CODE_TERMINAL
+    || tile === TILE_TYPES.WALL_TERMINAL
+  );
+}
+
+function _drawTerminalSheetColumns(G, ctx, W, panelMap) {
+  if (!(G.terminalSheetLoaded && G.terminalSheetImage && !G.terminalSheetError)) return;
+
+  const img = G.terminalSheetImage;
+  const imgW = img.naturalWidth || img.width || 0;
+  const imgH = img.naturalHeight || img.height || 0;
+  if (imgW <= 0 || imgH <= 0) return;
+
+  for (let col = 0; col < W; col += 1) {
+    const tile = colHitTile[col];
+    if (!_isTerminalWallTile(tile)) continue;
+
+    const rowH = colDrawEnd[col] - colDrawStart[col];
+    if (rowH < 1) continue;
+
+    const fogF = Math.max(0, 1 - colPerpDist[col] / 14);
+    if (fogF <= 0.03) continue;
+
+    const mapX = colMapX[col] | 0;
+    const mapY = colMapY[col] | 0;
+    const state = _getConsoleStateForTile(G, tile, mapX, mapY, panelMap);
+    const frontFace = _getTerminalFrontFace(mapX, mapY);
+    const viewFace = colFace ? (colFace[col] | 0) : FACE_S;
+    const faceCol = _getConsoleFaceColumn(viewFace, frontFace);
+    const rect = _getConsoleTileRect(faceCol, state);
+    if (!rect) continue;
+
+    const u = 1 - Math.max(0, Math.min(0.9995, colTexU[col]));
+    const sampleX = rect.sx + Math.max(0, Math.min(rect.sw - 1, (u * rect.sw) | 0));
+
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.25, Math.min(1, fogF));
+    ctx.drawImage(
+      img,
+      sampleX,
+      rect.sy,
+      1,
+      rect.sh,
+      col,
+      colDrawStart[col],
+      1,
+      rowH + 1,
+    );
+
+    const sideShade = colSide[col] === 1 ? 0.2 : 0;
+    const fogShade = Math.max(0, 1 - fogF) * 0.72;
+    const shade = Math.min(0.72, sideShade + fogShade);
+    if (shade > 0.01) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = SHADE_STRINGS[Math.min(72, (shade * 100 + 0.5) | 0)];
+      ctx.fillRect(col, colDrawStart[col], 1, rowH + 1);
+    }
+    ctx.restore();
+  }
+}
+
 function _isFloorRenderableTile(tile) {
   return (
     tile !== TILE_TYPES.WALL
@@ -666,6 +826,153 @@ function _ensureFloorAtlasPixels(G) {
   floorAtlasTileW = Math.max(1, (atlasW / FLOOR_ATLAS_COLS) | 0);
   floorAtlasTileH = Math.max(1, (atlasH / FLOOR_ATLAS_ROWS) | 0);
   return true;
+}
+
+function _ensureCeilingAtlasPixels(G) {
+  if (!(G.ceilingAtlasLoaded && G.ceilingAtlasImage && !G.ceilingAtlasError)) {
+    return false;
+  }
+
+  const source = G.ceilingAtlasImage;
+  const atlasW = source.naturalWidth || source.width || 0;
+  const atlasH = source.naturalHeight || source.height || 0;
+  if (atlasW <= 0 || atlasH <= 0) {
+    return false;
+  }
+
+  if (ceilingAtlasSource === source && ceilingAtlasPixels && ceilingAtlasWidth === atlasW && ceilingAtlasHeight === atlasH) {
+    return true;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = atlasW;
+  canvas.height = atlasH;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    return false;
+  }
+
+  ctx.drawImage(source, 0, 0);
+  const imageData = ctx.getImageData(0, 0, atlasW, atlasH);
+
+  ceilingAtlasSource = source;
+  ceilingAtlasPixels = imageData.data;
+  ceilingAtlasWidth = atlasW;
+  ceilingAtlasHeight = atlasH;
+  ceilingAtlasTileW = Math.max(1, (atlasW / CEILING_ATLAS_COLS) | 0);
+  ceilingAtlasTileH = Math.max(1, (atlasH / CEILING_ATLAS_ROWS) | 0);
+  return true;
+}
+
+function _getCeilingTileIndex(col, now) {
+  const hash = ((col * 73856093) ^ ((now / 1000 | 0) * 19349663)) >>> 0;
+  return hash % CEILING_ATLAS_VARIANTS;
+}
+
+function _drawCeilingTile(ctx, col, W, halfH, tileIndex) {
+  if (!ceilingAtlasPixels || ceilingAtlasWidth <= 0 || ceilingAtlasHeight <= 0) {
+    ctx.fillStyle = 'rgba(0,0,0,1)';
+    ctx.fillRect(col, 0, 1, halfH);
+    return;
+  }
+
+  const tileCol = tileIndex % CEILING_ATLAS_COLS;
+  const tileRow = (tileIndex / CEILING_ATLAS_COLS) | 0;
+  const srcX = tileCol * ceilingAtlasTileW;
+  const srcY = tileRow * ceilingAtlasTileH;
+
+  // Create small image data for this one tile column
+  const colImageData = ctx.createImageData(1, halfH);
+  const colData = colImageData.data;
+
+  // Sample from ceiling atlas at column 0 of the tile
+  for (let py = 0; py < halfH; py++) {
+    const tilePixelY = ((py / halfH) * ceilingAtlasTileH) | 0;
+    const srcPixelIdx = ((srcY + tilePixelY) * ceilingAtlasWidth + srcX) * 4;
+    colData[(py * 4)]     = ceilingAtlasPixels[srcPixelIdx] || 0;
+    colData[(py * 4) + 1] = ceilingAtlasPixels[srcPixelIdx + 1] || 0;
+    colData[(py * 4) + 2] = ceilingAtlasPixels[srcPixelIdx + 2] || 0;
+    colData[(py * 4) + 3] = ceilingAtlasPixels[srcPixelIdx + 3] || 255;
+  }
+
+  ctx.putImageData(colImageData, col, 0);
+}
+
+function _drawCeilingSpriteDevices(G, ctx, W, halfH, px, py, dirX, dirY, planeX, planeY, invDet) {
+  if (!G.devices || G.devices.length === 0) return;
+
+  for (const device of G.devices) {
+    if (device.type !== 'camera' && device.type !== 'lightpanel' && device.type !== 'neonpanel') {
+      continue;
+    }
+
+    const devX = device.x;
+    const devY = device.y;
+
+    // Relative position to camera
+    const dx = devX - px;
+    const dy = devY - py;
+
+    // Transform to camera space using correct raycaster matrix
+    const transformX = invDet * ( dirY * dx - dirX * dy);
+    const transformY = invDet * (-planeY * dx + planeX * dy);
+
+    // Skip if behind camera or too far
+    if (transformY <= 0.1) continue;
+
+    // Project to screen space (horizontal position)
+    const screenX = (W / 2) * (1 + transformX / transformY);
+    const screenY = halfH * 0.3; // Place sprites near top of ceiling
+    const spriteScale = 16 / transformY; // Scale based on distance
+
+    // Determine sprite index and image
+    let spriteImage = null;
+    let spriteCol = 0;
+    let spriteWidth = 32;
+    let spriteHeight = 32;
+
+    if (device.type === 'camera') {
+      if (!G.camSpriteLoaded || !G.camSpriteImage) continue;
+      spriteImage = G.camSpriteImage;
+      // TODO: Check if hacked and use offline sprite (col 1)
+      spriteCol = 0;
+      spriteWidth = G.camSpriteImage.naturalWidth / 2 || 32;
+      spriteHeight = G.camSpriteImage.naturalHeight || 32;
+    } else if (device.type === 'lightpanel') {
+      if (!G.lightPanelSpriteLoaded || !G.lightPanelSpriteImage) continue;
+      spriteImage = G.lightPanelSpriteImage;
+      // TODO: Check if hacked and use hacked sprite (col 1)
+      spriteCol = 0;
+      spriteWidth = G.lightPanelSpriteImage.naturalWidth / 2 || 32;
+      spriteHeight = G.lightPanelSpriteImage.naturalHeight || 32;
+    } else if (device.type === 'neonpanel') {
+      if (!G.neonPanelSpriteLoaded || !G.neonPanelSpriteImage) continue;
+      spriteImage = G.neonPanelSpriteImage;
+      // TODO: Check if hacked and use offline sprite (position 2:4)
+      spriteCol = 0;
+      spriteWidth = G.neonPanelSpriteImage.naturalWidth / 2 || 32;
+      spriteHeight = G.neonPanelSpriteImage.naturalHeight / 4 || 32;
+    }
+
+    if (!spriteImage) continue;
+
+    // Draw sprite at calculated position
+    const drawW = spriteScale * spriteWidth * 0.5; // Scale for distance
+    const drawH = spriteScale * spriteHeight * 0.5;
+    const drawX = screenX - drawW / 2;
+    const drawY = screenY - drawH / 2;
+
+    // Clamp to ceiling area
+    if (drawX + drawW < 0 || drawX > W || drawY + drawH < 0 || drawY > halfH) continue;
+
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(
+      spriteImage,
+      spriteCol * spriteWidth, 0, spriteWidth, spriteHeight,
+      drawX, drawY, drawW, drawH
+    );
+    ctx.globalAlpha = 1.0;
+  }
 }
 
 function _ensureFloorCache(W, H, halfH, scale) {
@@ -809,6 +1116,151 @@ function _drawTexturedFloor(G, ctx, W, H, halfH, px, py, dirX, dirY, planeX, pla
   ctx.imageSmoothingEnabled = prevSmooth;
 }
 
+function _cleanupLightPulses(G, now) {
+  if (!Array.isArray(G.lightPulseAreas) || !G.lightPulseAreas.length) return;
+  G.lightPulseAreas = G.lightPulseAreas.filter((pulse) => pulse && (pulse.until || 0) > now);
+}
+
+function _lampPulseFactor(G, lampX, lampY, now) {
+  if (!Array.isArray(G.lightPulseAreas) || !G.lightPulseAreas.length) return 1;
+
+  const _rand01 = (n) => {
+    const s = Math.sin(n * 12.9898) * 43758.5453;
+    return s - Math.floor(s);
+  };
+
+  let factor = 1;
+  for (const pulse of G.lightPulseAreas) {
+    if (!pulse) continue;
+    const dx = lampX - pulse.x;
+    const dy = lampY - pulse.y;
+    const r = Math.max(0.5, pulse.radius || 5);
+    if ((dx * dx + dy * dy) > (r * r)) continue;
+
+    // Irregular voltage-like flicker bursts: mostly stable with random short dips/spikes.
+    const lampSeed = ((lampX | 0) * 73856093) ^ ((lampY | 0) * 19349663) ^ 0x5f3759df;
+    const pulseSeed = ((pulse.x | 0) * 83492791) ^ ((pulse.y | 0) * 2971215073);
+    const baseSeed = (lampSeed ^ pulseSeed) >>> 0;
+
+    const tFast = Math.floor(now / 37);
+    const tSlow = Math.floor(now / 113);
+
+    const jitter = (_rand01(baseSeed + tFast) - 0.5) * 0.28;   // small high-frequency jitter
+    const dipChance = _rand01(baseSeed * 1.13 + tFast * 0.77); // sudden brownout dips
+    const spikeChance = _rand01(baseSeed * 0.71 + tSlow * 1.91); // occasional bright spikes
+
+    let phase = 1 + jitter;
+    if (dipChance > 0.86) {
+      phase *= 0.18 + _rand01(baseSeed + tFast * 3.17) * 0.35;
+    }
+    if (spikeChance > 0.95) {
+      phase *= 1.08 + _rand01(baseSeed + tSlow * 2.33) * 0.32;
+    }
+
+    phase = Math.max(0.12, Math.min(1.35, phase));
+    factor = Math.min(factor, phase);
+  }
+  return factor;
+}
+
+function _drawLightingOverlay(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, planeX, planeY) {
+  const lamps = Array.isArray(G.lamps) ? G.lamps : [];
+  if (!lamps.length && !G.blackout) return;
+
+  const now = performance.now();
+  _cleanupLightPulses(G, now);
+
+  ctx.save();
+  const darkAlpha = G.blackout ? 0.42 : 0.08;
+  ctx.fillStyle = 'rgba(0,0,0,' + darkAlpha.toFixed(3) + ')';
+  ctx.fillRect(0, 0, W, H);
+
+  if (G.blackout) {
+    ctx.restore();
+    return;
+  }
+
+  // Slight global ambient boost when lights are operational.
+  ctx.fillStyle = 'rgba(255,245,205,0.035)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (const lamp of lamps) {
+    if (!lamp) continue;
+    const lx = (lamp.x || 0) + 0.5;
+    const ly = (lamp.y || 0) + 0.5;
+    const dx = lx - px;
+    const dy = ly - py;
+    const distSq = dx * dx + dy * dy;
+    if (distSq > 14 * 14) continue;
+
+    if (!lineOfSight(
+      px,
+      py,
+      lx,
+      ly,
+      (tx, ty) => {
+        const t = G.tiles?.[ty]?.[tx];
+        return t === TILE_TYPES.WALL
+          || t === TILE_TYPES.DOOR_CLOSED
+          || t === TILE_TYPES.DOOR_LOCKED
+          || t === TILE_TYPES.WALL_TERMINAL;
+      },
+    )) {
+      continue;
+    }
+
+    const tX = invDet * (dirY * dx - dirX * dy);
+    const tY = invDet * (-planeY * dx + planeX * dy);
+    if (tY <= 0.08) continue;
+
+    const sx = (W / 2) * (1 + tX / tY);
+    const floorY = halfH + halfH / tY;
+    const ceilY = halfH - halfH / tY;
+    if (floorY < halfH - 6 || floorY > H + 180) continue;
+
+    const dist = Math.sqrt(Math.max(0.0001, distSq));
+    const beamLen = Math.max(10, floorY - ceilY);
+    const floorRadius = Math.max(20, Math.min(W * 0.28, (H / (dist + 0.7)) * 1.05));
+    const topRadius = Math.max(2, floorRadius * 0.1);
+    const pulse = _lampPulseFactor(G, lamp.x || 0, lamp.y || 0, now);
+    const intensity = Math.max(0.02, Math.min(0.24, (0.22 / (1 + dist * 0.22)) * pulse));
+
+    // Ceiling-origin beam cone with feathered edge layers.
+    for (let layer = 0; layer < 3; layer += 1) {
+      const spread = 1 + layer * 0.33;
+      const layerTop = topRadius * (1 + layer * 0.22);
+      const layerFloor = floorRadius * spread;
+      const alphaScale = layer === 0 ? 1 : (layer === 1 ? 0.45 : 0.24);
+      const coneGrad = ctx.createLinearGradient(sx, ceilY, sx, floorY);
+      coneGrad.addColorStop(0, 'rgba(255,246,190,' + (intensity * 0.52 * alphaScale).toFixed(3) + ')');
+      coneGrad.addColorStop(0.35, 'rgba(255,238,165,' + (intensity * 0.25 * alphaScale).toFixed(3) + ')');
+      coneGrad.addColorStop(1, 'rgba(255,232,145,0)');
+      ctx.fillStyle = coneGrad;
+      ctx.beginPath();
+      ctx.moveTo(sx - layerTop, ceilY);
+      ctx.lineTo(sx + layerTop, ceilY);
+      ctx.lineTo(sx + layerFloor, floorY);
+      ctx.lineTo(sx - layerFloor, floorY);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Small pool where beam hits the floor.
+    const floorGrad = ctx.createRadialGradient(sx, floorY, floorRadius * 0.08, sx, floorY, floorRadius);
+    floorGrad.addColorStop(0, 'rgba(255,246,185,' + (intensity * 0.35).toFixed(3) + ')');
+    floorGrad.addColorStop(0.55, 'rgba(255,238,160,' + (intensity * 0.14).toFixed(3) + ')');
+    floorGrad.addColorStop(1, 'rgba(255,230,140,0)');
+    ctx.fillStyle = floorGrad;
+    ctx.beginPath();
+    ctx.ellipse(sx, floorY, floorRadius, Math.max(6, beamLen * 0.1), 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 // ─── Camera FOV floor-projection cones ───────────────────────────────────────
 function _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, planeX, planeY) {
   if (!G.devices) return;
@@ -880,8 +1332,11 @@ function _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, pl
 
 // ─── Wall texture overlays ────────────────────────────────────────────────────
 function _drawWallTextures(G, ctx, wallHitMap, panelMap, W, H, halfH) {
+  const terminalSheetReady = !!(G.terminalSheetLoaded && G.terminalSheetImage && !G.terminalSheetError);
   for (const [key, g] of wallHitMap) {
     const { hitTile, minCol, maxCol, drawStart, drawEnd, perpDist, mapX, mapY } = g;
+    if (terminalSheetReady && _isTerminalWallTile(hitTile)) continue;
+
     const colW = maxCol - minCol + 1;
     const rowH = drawEnd - drawStart;
     if (colW < 1 || rowH < 1) continue;
@@ -901,16 +1356,32 @@ function _drawWallTextures(G, ctx, wallHitMap, panelMap, W, H, halfH) {
       case TILE_TYPES.DOOR_LOCKED:
         _texDoor(ctx, minCol, drawStart, colW, rowH, fogF, true);
         break;
-      case TILE_TYPES.MAIN_TERMINAL:
-        _texMainTerminal(ctx, minCol, drawStart, colW, rowH, fogF);
+      case TILE_TYPES.MAIN_TERMINAL: {
+        const st = _getConsoleStateForTile(G, hitTile, mapX, mapY, panelMap);
+        if (!_drawTerminalSheetTile(G, ctx, minCol, drawStart, colW, rowH, fogF, hitTile, st)) {
+          _texMainTerminal(ctx, minCol, drawStart, colW, rowH, fogF);
+        }
         break;
-      case TILE_TYPES.SIDE_TERMINAL:
-        _texSideTerminal(ctx, minCol, drawStart, colW, rowH, fogF, false);
+      }
+      case TILE_TYPES.SIDE_TERMINAL: {
+        const st = _getConsoleStateForTile(G, hitTile, mapX, mapY, panelMap);
+        if (!_drawTerminalSheetTile(G, ctx, minCol, drawStart, colW, rowH, fogF, hitTile, st)) {
+          _texSideTerminal(ctx, minCol, drawStart, colW, rowH, fogF, false);
+        }
         break;
-      case TILE_TYPES.CODE_TERMINAL:
-        _texSideTerminal(ctx, minCol, drawStart, colW, rowH, fogF, true);
+      }
+      case TILE_TYPES.CODE_TERMINAL: {
+        const st = _getConsoleStateForTile(G, hitTile, mapX, mapY, panelMap);
+        if (!_drawTerminalSheetTile(G, ctx, minCol, drawStart, colW, rowH, fogF, hitTile, st)) {
+          _texSideTerminal(ctx, minCol, drawStart, colW, rowH, fogF, true);
+        }
         break;
+      }
       case TILE_TYPES.WALL_TERMINAL: {
+        const st = _getConsoleStateForTile(G, hitTile, mapX, mapY, panelMap);
+        if (_drawTerminalSheetTile(G, ctx, minCol, drawStart, colW, rowH, fogF, hitTile, st)) {
+          break;
+        }
         const doorOpen = panelMap.get((mapY << 16) | mapX) || false;
         _texWallPanel(ctx, minCol, drawStart, colW, rowH, fogF, doorOpen);
         break;
@@ -918,6 +1389,106 @@ function _drawWallTextures(G, ctx, wallHitMap, panelMap, W, H, halfH) {
     }
     ctx.restore();
   }
+}
+
+function _findTerminalByPos(arr, x, y) {
+  if (!Array.isArray(arr)) return null;
+  for (let i = 0; i < arr.length; i += 1) {
+    const t = arr[i];
+    if (!t) continue;
+    if ((t.x | 0) === x && (t.y | 0) === y) return t;
+  }
+  return null;
+}
+
+function _getConsoleStateForTile(G, tileType, mapX, mapY, panelMap) {
+  if (tileType === TILE_TYPES.MAIN_TERMINAL) {
+    if (G.mainHacked) return CONSOLE_STATE.HACKED;
+    if (G.mainTerminalAuth && G.mainTerminalAuth.unlocked === false) return CONSOLE_STATE.LOCKED;
+    return CONSOLE_STATE.LOCKED;
+  }
+
+  if (tileType === TILE_TYPES.SIDE_TERMINAL || tileType === TILE_TYPES.CODE_TERMINAL) {
+    const term = _findTerminalByPos(G.sideTerminals, mapX, mapY);
+    if (term) {
+      if (term.used) return CONSOLE_STATE.DEPLETED;
+      if (term.hacked || (Array.isArray(G.sideHacked) && G.sideHacked.includes(term.id))) {
+        return CONSOLE_STATE.HACKED;
+      }
+    }
+    return CONSOLE_STATE.LOCKED;
+  }
+
+  if (tileType === TILE_TYPES.WALL_TERMINAL) {
+    const doorOpen = panelMap.get((mapY << 16) | mapX) || false;
+    return doorOpen ? CONSOLE_STATE.HACKED : CONSOLE_STATE.LOCKED;
+  }
+
+  return CONSOLE_STATE.LOCKED;
+}
+
+function _leftFace(face) {
+  return (face + 3) & 3;
+}
+
+function _rightFace(face) {
+  return (face + 1) & 3;
+}
+
+function _oppositeFace(face) {
+  return (face + 2) & 3;
+}
+
+function _getTerminalFrontFace(mapX, mapY) {
+  // Deterministic pseudo-random facing per tile; exact front direction is not gameplay-critical.
+  const hash = (((mapX * 73856093) ^ (mapY * 19349663)) >>> 0);
+  return hash & 3;
+}
+
+function _getConsoleFaceColumn(viewFace, frontFace) {
+  if ((viewFace | 0) === (frontFace | 0)) return CONSOLE_FACE_FRONT;
+  if ((viewFace | 0) === _oppositeFace(frontFace | 0)) return CONSOLE_FACE_BACK;
+  if ((viewFace | 0) === _leftFace(frontFace | 0)) return CONSOLE_FACE_SIDE_A;
+  if ((viewFace | 0) === _rightFace(frontFace | 0)) return CONSOLE_FACE_SIDE_B;
+  return CONSOLE_FACE_SIDE_A;
+}
+
+function _getConsoleTileRect(faceCol, state) {
+  if (faceCol < 0 || faceCol > 3) return null;
+  return {
+    sx: faceCol * CONSOLE_TILE_SIZE,
+    sy: state * CONSOLE_TILE_SIZE,
+    sw: CONSOLE_TILE_SIZE,
+    sh: CONSOLE_TILE_SIZE,
+  };
+}
+
+function _drawTerminalSheetTile(G, ctx, x, y, w, h, fogF, tileType, state) {
+  if (!(G.terminalSheetLoaded && G.terminalSheetImage && !G.terminalSheetError)) {
+    return false;
+  }
+
+  const img = G.terminalSheetImage;
+  const iw = img.naturalWidth || img.width || 0;
+  const ih = img.naturalHeight || img.height || 0;
+  if (iw <= 0 || ih <= 0) return false;
+
+  const rect = _getConsoleTileRect(CONSOLE_FACE_FRONT, state);
+  if (!rect) return false;
+
+  const a = Math.max(0.25, Math.min(1, fogF));
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.globalAlpha = a;
+  ctx.drawImage(img, rect.sx, rect.sy, rect.sw, rect.sh, x, y, Math.max(1, w), Math.max(1, h + 1));
+
+  const shade = Math.max(0, 1 - fogF) * 0.55;
+  if (shade > 0.01) {
+    ctx.fillStyle = SHADE_STRINGS[Math.min(72, (Math.min(0.72, shade) * 100 + 0.5) | 0)];
+    ctx.fillRect(x, y, Math.max(1, w), Math.max(1, h + 1));
+  }
+  ctx.restore();
+  return true;
 }
 
 // ── Door frame texture ────────────────────────────────────────────────────────
@@ -1115,11 +1686,108 @@ function _drawSprites(G, ctx, W, H, halfH, px, py, dirX, dirY, planeX, planeY, i
     if (fogF <= 0) continue;
 
     if (sp.kind === 'dev') {
-      _drawDevSprite(ctx, sp.dev, screenX, drawSX, drawEX, drawSY, drawEY, sw, sh, fogF, transformY, W);
+      if (!_drawGuardSpriteSheet(G, ctx, sp.dev, drawSX, drawEX, drawSY, drawEY, fogF, transformY, W, px, py)) {
+        _drawDevSprite(ctx, sp.dev, screenX, drawSX, drawEX, drawSY, drawEY, sw, sh, fogF, transformY, W);
+      }
     } else {
       _drawTileSprite(ctx, sp.tileVal, screenX, drawSX, drawEX, drawSY, drawEY, sw, sh, fogF, transformY, W);
     }
   }
+}
+
+function _getGuardSpriteState(guard) {
+  if (guard.dead || guard.state === 'death') return 'death';
+  if (guard.state === 'chase' || guard.state === 'suspicious' || guard.state === 'search') return 'alert';
+  if (guard.state === 'idle') return 'idle';
+  return 'walk';
+}
+
+function _getGuardSpriteRow(guard, playerX, playerY) {
+  const state = _getGuardSpriteState(guard);
+  if (state === 'alert') return 16;
+  if (state === 'death') return 17;
+
+  const dx = playerX - guard.x;
+  const dy = playerY - guard.y;
+  const angleToPlayer = Math.atan2(dy, dx);
+  const facing = Number.isFinite(guard.facing)
+    ? guard.facing
+    : (Number.isFinite(guard.angle) ? guard.angle : 0);
+  let rel = (angleToPlayer - facing) % (Math.PI * 2);
+  if (rel < 0) rel += Math.PI * 2;
+
+  const dirIdx = Math.round(rel / (Math.PI / 4)) % GUARD_DIR_ORDER.length;
+  const baseRow = state === 'idle' ? 0 : 8;
+  return baseRow + dirIdx;
+}
+
+function _getGuardSpriteFrame(guard) {
+  const state = _getGuardSpriteState(guard);
+  const now = performance.now();
+
+  if (state === 'idle') {
+    return ((now / 220) | 0) % 4;
+  }
+  if (state === 'walk') {
+    return ((now / 110) | 0) % 6;
+  }
+  if (state === 'alert') {
+    return ((now / 130) | 0) % 4;
+  }
+
+  if (!Number.isFinite(guard._deathAnimStart)) {
+    guard._deathAnimStart = now;
+  }
+  const deathFrame = ((now - guard._deathAnimStart) / 140) | 0;
+  return Math.max(0, Math.min(5, deathFrame));
+}
+
+function _drawGuardSpriteSheet(G, ctx, dev, drawSX, drawEX, drawSY, drawEY, fogF, transformY, W, px, py) {
+  if (!dev || dev.type !== 'guard') return false;
+  if (!(G.guardSpriteLoaded && G.guardSpriteImage && !G.guardSpriteError)) return false;
+
+  const img = G.guardSpriteImage;
+  const imgW = img.naturalWidth || img.width || 0;
+  const imgH = img.naturalHeight || img.height || 0;
+  if (imgW <= 0 || imgH <= 0) return false;
+
+  const cols = 8;
+  const rows = 18;
+  const frameW = Math.max(1, (imgW / cols) | 0);
+  const frameH = Math.max(1, (imgH / rows) | 0);
+
+  const row = Math.max(0, Math.min(17, _getGuardSpriteRow(dev, px, py) | 0));
+  const frame = _getGuardSpriteFrame(dev);
+  const frameX = Math.max(0, Math.min(cols - 1, frame | 0)) * frameW;
+  const frameY = row * frameH;
+
+  const destW = Math.max(1, drawEX - drawSX + 1);
+  const destH = Math.max(1, drawEY - drawSY + 1);
+  const bodyW = Math.max(1, (destW * 0.72) | 0);
+  const bodySX = drawSX + ((destW - bodyW) >> 1);
+  const bodyEX = bodySX + bodyW - 1;
+  const yOffset = Math.max(1, (destH * 0.12) | 0);
+  const dstY = drawSY + yOffset;
+  const srcTrimX = Math.max(0, (frameW * 0.14) | 0);
+  const srcBodyW = Math.max(1, frameW - srcTrimX * 2);
+
+  ctx.save();
+  const prevSmooth = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  ctx.globalAlpha = Math.max(0.82, Math.min(1, fogF * 1.08));
+
+  for (let c = bodySX; c <= bodyEX; c += 1) {
+    if (c < 0 || c >= W) continue;
+    if (zBuffer[c] <= transformY + 0.1) continue;
+
+    const u = (c - bodySX) / bodyW;
+    const srcX = frameX + srcTrimX + Math.min(srcBodyW - 1, Math.max(0, (u * srcBodyW) | 0));
+    ctx.drawImage(img, srcX, frameY, 1, frameH, c, dstY, 1, destH);
+  }
+
+  ctx.imageSmoothingEnabled = prevSmooth;
+  ctx.restore();
+  return true;
 }
 
 // ── Entity billboard ──────────────────────────────────────────────────────────
@@ -1244,6 +1912,9 @@ export function drawMinimap(G) {
   ctx.fillStyle = 'rgba(0,0,0,0.72)';
   ctx.fillRect(MX - 2, MY - 2, MW + 4, MH + 4);
 
+  const _now = performance.now();
+  _cleanupLightPulses(G, _now);
+
   for (let ty = 0; ty < ROWS; ty++) {
     for (let tx = 0; tx < COLS; tx++) {
       const key   = tx + ',' + ty;
@@ -1262,6 +1933,17 @@ export function drawMinimap(G) {
       else c = '#0a1f10';
       ctx.fillStyle = c;
       ctx.fillRect(MX + tx * MSCALE, MY + ty * MSCALE, MSCALE, MSCALE);
+
+      if (G.blackout) {
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fillRect(MX + tx * MSCALE, MY + ty * MSCALE, MSCALE, MSCALE);
+      } else {
+        const l = _minimapLampInfluence(G, tx, ty, _now);
+        if (l > 0.02) {
+          ctx.fillStyle = 'rgba(255,245,200,' + (Math.min(0.22, 0.04 + l * 0.18)).toFixed(3) + ')';
+          ctx.fillRect(MX + tx * MSCALE, MY + ty * MSCALE, MSCALE, MSCALE);
+        }
+      }
     }
   }
 
@@ -1345,6 +2027,27 @@ export function drawMinimap(G) {
   ctx.lineWidth   = 1;
   ctx.strokeRect(MX - 2, MY - 2, MW + 4, MH + 4);
   ctx.restore();
+}
+
+function _minimapLampInfluence(G, tx, ty, now) {
+  const lamps = Array.isArray(G.lamps) ? G.lamps : [];
+  if (!lamps.length || G.blackout) return 0;
+
+  let best = 0;
+  const cx = tx + 0.5;
+  const cy = ty + 0.5;
+  for (const lamp of lamps) {
+    if (!lamp) continue;
+    const dx = (lamp.x + 0.5) - cx;
+    const dy = (lamp.y + 0.5) - cy;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d > 6.5) continue;
+
+    const pulse = _lampPulseFactor(G, lamp.x || 0, lamp.y || 0, now);
+    const val = Math.max(0, 1 - d / 6.5) * pulse;
+    if (val > best) best = val;
+  }
+  return best;
 }
 
 // ─── HUD ─────────────────────────────────────────────────────────────────────

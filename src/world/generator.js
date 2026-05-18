@@ -280,6 +280,7 @@ export function generateMap(opts = {}) {
 	}
 
 	const distractionNodes = addDistractionNodes(tiles, rooms, [entrance, mainTerminal, ...sideTerminals], opts.floorIdx || 0);
+	const lamps = placeCeilingLamps(tiles, rooms, [entrance, mainTerminal, ...sideTerminals]);
 	ensureCriticalPaths(tiles, entrance, mainTerminal, sideTerminals, distractionNodes);
 	const wallVariants = buildWallVariants(tiles);
 
@@ -294,6 +295,7 @@ export function generateMap(opts = {}) {
 		wallTerminals,
 		hideSpots,
 		distractionNodes,
+		lamps,
 		hasCodeTerminal: opts.codeTerminal || false,
 		stairsUp: null,
 		stairsDown: null,
@@ -489,6 +491,26 @@ export function generateTutorialMap() {
 			cooldownMs: 7200,
 			durationMs: 7000,
 		},
+		{
+			id: 'cam_1',
+			networkName: makeNetworkName('CAMERA', 0, 1),
+			x: 15,
+			y: 8,
+			desc: 'Kamera bezpieczeństwa',
+			type: 'camera',
+			cooldownMs: 0,
+			durationMs: 0,
+		},
+		{
+			id: 'lightpanel_1',
+			networkName: makeNetworkName('LIGHTPANEL', 0, 1),
+			x: 25,
+			y: 9,
+			desc: 'Panel świetlny',
+			type: 'lightpanel',
+			cooldownMs: 0,
+			durationMs: 0,
+		},
 	];
 
 	tiles[entrance.y][entrance.x] = TILE_TYPES.ENTRANCE;
@@ -504,6 +526,16 @@ export function generateTutorialMap() {
 	tiles[4][33] = TILE_TYPES.STAIR_UP;
 	tiles[20][4] = TILE_TYPES.STAIR_DOWN;
 	const wallVariants = buildWallVariants(tiles);
+	const lamps = [
+		{ x: 5, y: 5 },
+		{ x: 9, y: 5 },
+		{ x: 17, y: 5 },
+		{ x: 27, y: 5 },
+		{ x: 31, y: 5 },
+		{ x: 6, y: 17 },
+		{ x: 17, y: 17 },
+		{ x: 29, y: 17 },
+	];
 
 	return {
 		tiles,
@@ -516,6 +548,7 @@ export function generateTutorialMap() {
 		wallTerminals,
 		hideSpots,
 		distractionNodes,
+		lamps,
 		hasCodeTerminal: false,
 		stairsUp: { x: 33, y: 4, to: 0 },
 		stairsDown: { x: 4, y: 20, to: 0 },
@@ -523,6 +556,64 @@ export function generateTutorialMap() {
 		floorCount: 1,
 		tutorial: true,
 	};
+}
+
+function placeCeilingLamps(tiles, rooms, protectedPoints = []) {
+	const blocked = new Set();
+	for (const p of protectedPoints) {
+		if (!p) continue;
+		blocked.add((p.x | 0) + ',' + (p.y | 0));
+	}
+
+	const candidates = [];
+	for (let y = 1; y < MAP_H - 1; y += 1) {
+		for (let x = 1; x < MAP_W - 1; x += 1) {
+			if (tiles[y][x] !== TILE_TYPES.FLOOR) continue;
+			if (blocked.has(x + ',' + y)) continue;
+
+			let open = 0;
+			if (tiles[y - 1][x] === TILE_TYPES.FLOOR) open += 1;
+			if (tiles[y + 1][x] === TILE_TYPES.FLOOR) open += 1;
+			if (tiles[y][x - 1] === TILE_TYPES.FLOOR) open += 1;
+			if (tiles[y][x + 1] === TILE_TYPES.FLOOR) open += 1;
+			if (open < 2) continue;
+
+			candidates.push({ x, y });
+		}
+	}
+
+	const floorTileCount = candidates.length;
+	const target = Math.max(5, Math.min(16, Math.round(floorTileCount / 65)));
+	if (!candidates.length) return [];
+
+	const lamps = [];
+	const minDistSq = 4 * 4;
+	const shuffled = [...candidates].sort(() => Math.random() - 0.5);
+
+	for (const c of shuffled) {
+		let ok = true;
+		for (const l of lamps) {
+			const dx = l.x - c.x;
+			const dy = l.y - c.y;
+			if ((dx * dx + dy * dy) < minDistSq) {
+				ok = false;
+				break;
+			}
+		}
+		if (!ok) continue;
+		lamps.push(c);
+		if (lamps.length >= target) break;
+	}
+
+	if (lamps.length < 4) {
+		for (const c of shuffled) {
+			if (lamps.some((l) => l.x === c.x && l.y === c.y)) continue;
+			lamps.push(c);
+			if (lamps.length >= 4) break;
+		}
+	}
+
+	return lamps;
 }
 
 function assignRunAccessPlan(floors) {

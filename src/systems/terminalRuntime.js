@@ -1588,6 +1588,18 @@ function runDistractionCommand(action, expectedType, target) {
   ref.activeUntil = now + (ref.durationMs || 6000);
   ref.cooldownUntil = now + (ref.cooldownMs || 7000);
 
+  if (action === 'cut_lights' && ref.nodeType === 'lights') {
+    if (!Array.isArray(G.lightPulseAreas)) {
+      G.lightPulseAreas = [];
+    }
+    G.lightPulseAreas.push({
+      x: ref.x,
+      y: ref.y,
+      radius: 5,
+      until: ref.activeUntil,
+    });
+  }
+
   const lureX = ref.x;
   const lureY = ref.y;
 

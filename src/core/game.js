@@ -1,6 +1,6 @@
 import { G, initWaveState } from './state.js';
 import { loadHubState, saveHubState } from './persistence.js';
-import { FLOOR_ATLAS_SRC, HUD_HEIGHT, WALL_ATLAS_SRC } from './constants.js';
+import { CEILING_ATLAS_SRC, CAM_SPRITE_SRC, FLOOR_ATLAS_SRC, GUARD_SPRITE_SRC, HUD_HEIGHT, LIGHT_PANEL_SPRITE_SRC, NEON_PANEL_SPRITE_SRC, TERMINAL_SHEET_SRC, WALL_ATLAS_SRC } from './constants.js';
 import { generateMultiFloorMap, generateTutorialMap } from '../world/generator.js';
 import { createCamera } from '../entities/camera.js';
 import { createGuard } from '../entities/guard.js';
@@ -13,6 +13,7 @@ import { resetOverlays, updateMissionText } from '../systems/mission.js';
 import { clearLog, bindUI, log, rebuildList, refreshHUD, syncZoneLabel } from '../systems/ui.js';
 import { spawnEntities, update } from '../systems/update.js';
 import { initRenderer, renderFrame } from '../systems/render.js';
+import { clearWebGLRenderer, initWebGLRenderer, resizeWebGLRenderer } from '../systems/renderWebGL.js';
 import { updateVisibility } from '../systems/visibility.js';
 import { initAudio, updateAudio, resetAudio, primeAudioSettings } from '../systems/audio.js';
 import {
@@ -111,6 +112,126 @@ function initFloorAtlas() {
   };
 
   image.src = FLOOR_ATLAS_SRC;
+}
+
+function initGuardSprite() {
+  const image = new Image();
+
+  G.guardSpriteImage = image;
+  G.guardSpriteLoaded = false;
+  G.guardSpriteError = false;
+
+  image.onload = () => {
+    G.guardSpriteLoaded = true;
+    G.guardSpriteError = false;
+  };
+
+  image.onerror = () => {
+    G.guardSpriteLoaded = false;
+    G.guardSpriteError = true;
+  };
+
+  image.src = GUARD_SPRITE_SRC;
+}
+
+function initTerminalSheet() {
+  const image = new Image();
+
+  G.terminalSheetImage = image;
+  G.terminalSheetLoaded = false;
+  G.terminalSheetError = false;
+
+  image.onload = () => {
+    G.terminalSheetLoaded = true;
+    G.terminalSheetError = false;
+  };
+
+  image.onerror = () => {
+    G.terminalSheetLoaded = false;
+    G.terminalSheetError = true;
+  };
+
+  image.src = TERMINAL_SHEET_SRC;
+}
+
+function initCeilingAtlas() {
+  const image = new Image();
+
+  G.ceilingAtlasImage = image;
+  G.ceilingAtlasLoaded = false;
+  G.ceilingAtlasError = false;
+
+  image.onload = () => {
+    G.ceilingAtlasLoaded = true;
+    G.ceilingAtlasError = false;
+  };
+
+  image.onerror = () => {
+    G.ceilingAtlasLoaded = false;
+    G.ceilingAtlasError = true;
+  };
+
+  image.src = CEILING_ATLAS_SRC;
+}
+
+function initCamSprite() {
+  const image = new Image();
+
+  G.camSpriteImage = image;
+  G.camSpriteLoaded = false;
+  G.camSpriteError = false;
+
+  image.onload = () => {
+    G.camSpriteLoaded = true;
+    G.camSpriteError = false;
+  };
+
+  image.onerror = () => {
+    G.camSpriteLoaded = false;
+    G.camSpriteError = true;
+  };
+
+  image.src = CAM_SPRITE_SRC;
+}
+
+function initLightPanelSprite() {
+  const image = new Image();
+
+  G.lightPanelSpriteImage = image;
+  G.lightPanelSpriteLoaded = false;
+  G.lightPanelSpriteError = false;
+
+  image.onload = () => {
+    G.lightPanelSpriteLoaded = true;
+    G.lightPanelSpriteError = false;
+  };
+
+  image.onerror = () => {
+    G.lightPanelSpriteLoaded = false;
+    G.lightPanelSpriteError = true;
+  };
+
+  image.src = LIGHT_PANEL_SPRITE_SRC;
+}
+
+function initNeonPanelSprite() {
+  const image = new Image();
+
+  G.neonPanelSpriteImage = image;
+  G.neonPanelSpriteLoaded = false;
+  G.neonPanelSpriteError = false;
+
+  image.onload = () => {
+    G.neonPanelSpriteLoaded = true;
+    G.neonPanelSpriteError = false;
+  };
+
+  image.onerror = () => {
+    G.neonPanelSpriteLoaded = false;
+    G.neonPanelSpriteError = true;
+  };
+
+  image.src = NEON_PANEL_SPRITE_SRC;
 }
 
 function playMainMenuClickSfx() {
@@ -1430,8 +1551,15 @@ export function boot() {
   G.canvas = G.dom.canvas;
   G.ctx = G.canvas.getContext('2d');
   G.ctx.imageSmoothingEnabled = false;
+  initWebGLRenderer(G);
   initWallAtlas();
   initFloorAtlas();
+  initGuardSprite();
+  initTerminalSheet();
+  initCeilingAtlas();
+  initCamSprite();
+  initLightPanelSprite();
+  initNeonPanelSprite();
 
   resize();
   initRenderer();
@@ -1569,6 +1697,7 @@ function startLoop() {
     last = ts;
 
     if (G.menuActive) {
+      clearWebGLRenderer(G);
       updateAudio();
       updateAmbientBg();
 
@@ -1601,4 +1730,5 @@ function updateAmbientBg() {
 function resize() {
   G.canvas.width = window.innerWidth;
   G.canvas.height = window.innerHeight - HUD_HEIGHT;
+  resizeWebGLRenderer(G, G.canvas.width, G.canvas.height);
 }
