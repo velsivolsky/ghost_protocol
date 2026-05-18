@@ -25,8 +25,7 @@ export const LIGHT_PANEL_SPRITE_HACKED = 1;
 export const NEON_PANEL_SPRITE_SRC = 'assets/tilesets/neon_panel.png';
 export const NEON_PANEL_SPRITE_COLS = 2;
 export const NEON_PANEL_SPRITE_ROWS = 4;
-export const NEON_PANEL_SPRITE_OFFLINE = 7; // Row 1 (2), Col 1 (0): index (1*2 + 1) = 3... wait, user says 2:4 is offline, so row index 1, col index 3 → 1*2+3... no wait
-// 2x4 grid: 2 cols, 4 rows. sprite 2:4 means col 2 (index 1), row 4 (index 3) → row*cols + col = 3*2 + 1 = 7
+export const NEON_PANEL_SPRITE_OFFLINE = 7; // col 2, row 4 (1-based) in a 2x4 atlas
 export const HUD_HEIGHT = 36;
 export const HACK_RANGE = 4.5;
 export const PLAYER_SPEED = 3.2;

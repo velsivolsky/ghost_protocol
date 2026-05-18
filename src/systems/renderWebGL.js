@@ -5,6 +5,7 @@ let glBuffer = null;
 let glDataTexture = null;
 let glWallAtlasTexture = null;
 let glFloorAtlasTexture = null;
+let glCeilingAtlasTexture = null;
 let glMapTexture = null;
 let glZTexture = null;
 let glColumnData = null;
@@ -20,6 +21,7 @@ let uniformHalfH = null;
 let uniformDataTex = null;
 let uniformWallAtlasTex = null;
 let uniformFloorAtlasTex = null;
+let uniformCeilingAtlasTex = null;
 let uniformMapTex = null;
 let uniformZTex = null;
 let uniformMapSize = null;
@@ -28,8 +30,10 @@ let uniformDir = null;
 let uniformPlane = null;
 let uniformWallAtlasGrid = null;
 let uniformFloorAtlasGrid = null;
+let uniformCeilingAtlasGrid = null;
 let uniformWallAtlasEnabled = null;
 let uniformFloorAtlasEnabled = null;
+let uniformCeilingAtlasEnabled = null;
 let uniformFloorEnabled = null;
 let uniformFloorMaxDist = null;
 let uniformZMaxDist = null;
@@ -38,8 +42,11 @@ let lastWallAtlasCanvas = null;
 let lastWallAtlasW = 0;
 let lastWallAtlasH = 0;
 let lastFloorPixelsRef = null;
+let lastCeilingPixelsRef = null;
 let lastFloorAtlasW = 0;
 let lastFloorAtlasH = 0;
+let lastCeilingAtlasW = 0;
+let lastCeilingAtlasH = 0;
 let lastMapW = 0;
 let lastMapH = 0;
 
@@ -76,6 +83,7 @@ function createProgram(gl) {
     uniform sampler2D uDataTex;
     uniform sampler2D uWallAtlasTex;
     uniform sampler2D uFloorAtlasTex;
+    uniform sampler2D uCeilingAtlasTex;
     uniform sampler2D uMapTex;
     uniform sampler2D uZTex;
 
@@ -88,21 +96,43 @@ function createProgram(gl) {
     uniform vec2 uPlane;
     uniform vec2 uWallAtlasGrid;
     uniform vec2 uFloorAtlasGrid;
+    uniform vec2 uCeilingAtlasGrid;
     uniform float uWallAtlasEnabled;
     uniform float uFloorAtlasEnabled;
+    uniform float uCeilingAtlasEnabled;
     uniform float uFloorEnabled;
     uniform float uFloorMaxDist;
     uniform float uZMaxDist;
 
-    vec3 ceilingColor(float yN) {
+    vec3 ceilingColor(float xPx, float yPx, float yN) {
       vec3 topCol = vec3(0.0, 0.0, 0.0);
       vec3 midCol = vec3(0.02, 0.055, 0.03);
       vec3 lowCol = vec3(0.035, 0.08, 0.045);
       float t = clamp(yN * 2.0, 0.0, 1.0);
-      if (t < 0.6) {
-        return mix(topCol, midCol, t / 0.6);
+      vec3 gradient = (t < 0.6)
+        ? mix(topCol, midCol, t / 0.6)
+        : mix(midCol, lowCol, (t - 0.6) / 0.4);
+
+      if (uCeilingAtlasEnabled < 0.5 || yPx >= uHalfH) {
+        return gradient;
       }
-      return mix(midCol, lowCol, (t - 0.6) / 0.4);
+
+      float rowDist = uHalfH / max(1.0, uHalfH - yPx);
+      float cameraX = (2.0 * xPx) / uScreen.x - 1.0;
+      vec2 world = uPlayerPos + rowDist * (uDir + uPlane * cameraX);
+      vec2 tile = floor(world);
+      float h = fract(sin(dot(tile, vec2(41.873, 93.217))) * 27487.354);
+      float variant = floor(h * (uCeilingAtlasGrid.x * uCeilingAtlasGrid.y));
+      float vTileX = mod(variant, uCeilingAtlasGrid.x);
+      float vTileY = floor(variant / uCeilingAtlasGrid.x);
+      vec2 fracUv = fract(world);
+      vec2 atlasUv = vec2(
+        (vTileX + fracUv.x) / uCeilingAtlasGrid.x,
+        (vTileY + fracUv.y) / uCeilingAtlasGrid.y
+      );
+      vec3 col = texture2D(uCeilingAtlasTex, atlasUv).rgb;
+      float fog = max(0.18, 1.0 - rowDist / 18.0);
+      return col * fog;
     }
 
     vec3 floorFallbackColor(float yN) {
@@ -245,10 +275,10 @@ function createProgram(gl) {
       vec3 color;
       if (endY <= startY + 0.5) {
         color = (yPx < uHalfH)
-          ? ceilingColor(yN)
+          ? ceilingColor(xPx, yPx, yN)
           : floorColor(xPx, yPx, zDistN, yN);
       } else if (yPx < startY) {
-        color = ceilingColor(yN);
+        color = ceilingColor(xPx, yPx, yN);
       } else if (yPx > endY) {
         color = floorColor(xPx, yPx, zDistN, yN);
       } else {
@@ -366,14 +396,16 @@ export function initWebGLRenderer(G) {
   const dataTexture = gl.createTexture();
   const wallTexture = gl.createTexture();
   const floorTexture = gl.createTexture();
+  const ceilingTexture = gl.createTexture();
   const mapTexture = gl.createTexture();
   const zTexture = gl.createTexture();
 
-  if (!buffer || !dataTexture || !wallTexture || !floorTexture || !mapTexture || !zTexture) {
+  if (!buffer || !dataTexture || !wallTexture || !floorTexture || !ceilingTexture || !mapTexture || !zTexture) {
     if (buffer) gl.deleteBuffer(buffer);
     if (dataTexture) gl.deleteTexture(dataTexture);
     if (wallTexture) gl.deleteTexture(wallTexture);
     if (floorTexture) gl.deleteTexture(floorTexture);
+    if (ceilingTexture) gl.deleteTexture(ceilingTexture);
     if (mapTexture) gl.deleteTexture(mapTexture);
     if (zTexture) gl.deleteTexture(zTexture);
     gl.deleteProgram(program);
@@ -387,6 +419,7 @@ export function initWebGLRenderer(G) {
   glDataTexture = dataTexture;
   glWallAtlasTexture = wallTexture;
   glFloorAtlasTexture = floorTexture;
+  glCeilingAtlasTexture = ceilingTexture;
   glMapTexture = mapTexture;
   glZTexture = zTexture;
 
@@ -397,6 +430,7 @@ export function initWebGLRenderer(G) {
   uniformDataTex = gl.getUniformLocation(program, 'uDataTex');
   uniformWallAtlasTex = gl.getUniformLocation(program, 'uWallAtlasTex');
   uniformFloorAtlasTex = gl.getUniformLocation(program, 'uFloorAtlasTex');
+  uniformCeilingAtlasTex = gl.getUniformLocation(program, 'uCeilingAtlasTex');
   uniformMapTex = gl.getUniformLocation(program, 'uMapTex');
   uniformZTex = gl.getUniformLocation(program, 'uZTex');
   uniformMapSize = gl.getUniformLocation(program, 'uMapSize');
@@ -405,8 +439,10 @@ export function initWebGLRenderer(G) {
   uniformPlane = gl.getUniformLocation(program, 'uPlane');
   uniformWallAtlasGrid = gl.getUniformLocation(program, 'uWallAtlasGrid');
   uniformFloorAtlasGrid = gl.getUniformLocation(program, 'uFloorAtlasGrid');
+  uniformCeilingAtlasGrid = gl.getUniformLocation(program, 'uCeilingAtlasGrid');
   uniformWallAtlasEnabled = gl.getUniformLocation(program, 'uWallAtlasEnabled');
   uniformFloorAtlasEnabled = gl.getUniformLocation(program, 'uFloorAtlasEnabled');
+  uniformCeilingAtlasEnabled = gl.getUniformLocation(program, 'uCeilingAtlasEnabled');
   uniformFloorEnabled = gl.getUniformLocation(program, 'uFloorEnabled');
   uniformFloorMaxDist = gl.getUniformLocation(program, 'uFloorMaxDist');
   uniformZMaxDist = gl.getUniformLocation(program, 'uZMaxDist');
@@ -422,11 +458,13 @@ export function initWebGLRenderer(G) {
   configureTexture(gl, glDataTexture);
   configureTexture(gl, glWallAtlasTexture);
   configureTexture(gl, glFloorAtlasTexture);
+  configureTexture(gl, glCeilingAtlasTexture);
   configureTexture(gl, glMapTexture);
   configureTexture(gl, glZTexture);
 
   uploadFallbackTexture(gl, glWallAtlasTexture, [18, 52, 28, 255]);
   uploadFallbackTexture(gl, glFloorAtlasTexture, [12, 35, 20, 255]);
+  uploadFallbackTexture(gl, glCeilingAtlasTexture, [8, 14, 10, 255]);
   uploadFallbackTexture(gl, glMapTexture, [0, 0, 0, 255]);
   uploadFallbackTexture(gl, glZTexture, [255, 0, 0, 255]);
 
@@ -542,6 +580,36 @@ function updateFloorAtlasTexture(gl, floorAtlasReady, floorAtlasPixels, floorAtl
   lastFloorAtlasH = floorAtlasHeight;
 }
 
+function updateCeilingAtlasTexture(gl, ceilingAtlasReady, ceilingAtlasPixels, ceilingAtlasWidth, ceilingAtlasHeight) {
+  if (!glCeilingAtlasTexture) return;
+  if (!ceilingAtlasReady || !ceilingAtlasPixels || ceilingAtlasWidth <= 0 || ceilingAtlasHeight <= 0) {
+    return;
+  }
+
+  if (ceilingAtlasPixels === lastCeilingPixelsRef && ceilingAtlasWidth === lastCeilingAtlasW && ceilingAtlasHeight === lastCeilingAtlasH) {
+    return;
+  }
+
+  gl.activeTexture(gl.TEXTURE5);
+  gl.bindTexture(gl.TEXTURE_2D, glCeilingAtlasTexture);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA,
+    ceilingAtlasWidth,
+    ceilingAtlasHeight,
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    ceilingAtlasPixels
+  );
+
+  lastCeilingPixelsRef = ceilingAtlasPixels;
+  lastCeilingAtlasW = ceilingAtlasWidth;
+  lastCeilingAtlasH = ceilingAtlasHeight;
+}
+
 export function renderRaycastWebGL(G, params) {
   if (!G.webglEnabled || !glRef || !glProgram || !glDataTexture) {
     return false;
@@ -583,6 +651,12 @@ export function renderRaycastWebGL(G, params) {
     floorAtlasHeight,
     floorAtlasCols,
     floorAtlasRows,
+    ceilingAtlasReady,
+    ceilingAtlasPixels,
+    ceilingAtlasWidth,
+    ceilingAtlasHeight,
+    ceilingAtlasCols,
+    ceilingAtlasRows,
   } = params;
 
   if (glLastWidth !== width || glLastHeight !== height) {
@@ -637,6 +711,7 @@ export function renderRaycastWebGL(G, params) {
 
   updateWallAtlasTexture(gl, wallAtlasReady, wallAtlasCanvas);
   updateFloorAtlasTexture(gl, floorAtlasReady, floorAtlasPixels, floorAtlasWidth, floorAtlasHeight);
+  updateCeilingAtlasTexture(gl, ceilingAtlasReady, ceilingAtlasPixels, ceilingAtlasWidth, ceilingAtlasHeight);
   updateMapTexture(gl, tileFlat, tileMapW, tileMapH);
 
   gl.useProgram(glProgram);
@@ -661,6 +736,7 @@ export function renderRaycastWebGL(G, params) {
   gl.uniform1i(uniformFloorAtlasTex, 2);
   gl.uniform1i(uniformMapTex, 3);
   gl.uniform1i(uniformZTex, 4);
+  gl.uniform1i(uniformCeilingAtlasTex, 5);
 
   gl.uniform1f(uniformColumns, width);
   gl.uniform2f(uniformScreen, width, height);
@@ -671,8 +747,10 @@ export function renderRaycastWebGL(G, params) {
   gl.uniform2f(uniformPlane, planeX, planeY);
   gl.uniform2f(uniformWallAtlasGrid, Math.max(1, wallAtlasCols), Math.max(1, wallAtlasRows));
   gl.uniform2f(uniformFloorAtlasGrid, Math.max(1, floorAtlasCols), Math.max(1, floorAtlasRows));
+  gl.uniform2f(uniformCeilingAtlasGrid, Math.max(1, ceilingAtlasCols || 1), Math.max(1, ceilingAtlasRows || 1));
   gl.uniform1f(uniformWallAtlasEnabled, wallAtlasReady ? 1 : 0);
   gl.uniform1f(uniformFloorAtlasEnabled, floorAtlasReady ? 1 : 0);
+  gl.uniform1f(uniformCeilingAtlasEnabled, ceilingAtlasReady ? 1 : 0);
   gl.uniform1f(uniformFloorEnabled, floorEnabled ? 1 : 0);
   gl.uniform1f(uniformFloorMaxDist, Math.max(1, floorMaxRowDist || 10));
   gl.uniform1f(uniformZMaxDist, Z_MAX_DIST);

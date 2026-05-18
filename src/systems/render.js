@@ -10,6 +10,7 @@
  */
 
 import {
+  CAM_SPRITE_OFFLINE,
   CEILING_ATLAS_COLS,
   CEILING_ATLAS_ROWS,
   CEILING_ATLAS_VARIANTS,
@@ -18,6 +19,9 @@ import {
   FLOOR_ATLAS_VARIANTS,
   FOV,
   HALF_FOV,
+  LIGHT_PANEL_SPRITE_HACKED,
+  NEON_PANEL_SPRITE_COLS,
+  NEON_PANEL_SPRITE_OFFLINE,
   TILE_TYPES,
   WALL_ATLAS_COLS,
   WALL_ATLAS_ROWS,
@@ -368,6 +372,7 @@ export function renderFrame(G) {
   const atlasReady = !!(G.wallAtlasLoaded && G.wallAtlasImage && !G.wallAtlasError);
   const wallAtlasReadyGL = webgl3D ? (atlasReady && _ensurePreparedWallAtlas(G)) : false;
   const floorAtlasReadyGL = webgl3D ? _ensureFloorAtlasPixels(G) : false;
+  const ceilingAtlasReadyGL = webgl3D ? _ensureCeilingAtlasPixels(G) : false;
   const floorPerf = _getFloorPerfSettings(G);
   const wallPerf = _getWallPerfSettings(G);
   const wallRayStep = webgl3D ? 1 : wallPerf.rayStep;
@@ -560,6 +565,12 @@ export function renderFrame(G) {
     floorAtlasHeight,
     floorAtlasCols: FLOOR_ATLAS_COLS,
     floorAtlasRows: FLOOR_ATLAS_ROWS,
+    ceilingAtlasReady: ceilingAtlasReadyGL,
+    ceilingAtlasPixels,
+    ceilingAtlasWidth,
+    ceilingAtlasHeight,
+    ceilingAtlasCols: CEILING_ATLAS_COLS,
+    ceilingAtlasRows: CEILING_ATLAS_ROWS,
   })) {
     // WebGL rendered the base 3D layer; keep 2D for overlays, sprites and HUD.
   } else {
@@ -902,76 +913,73 @@ function _drawCeilingSpriteDevices(G, ctx, W, halfH, px, py, dirX, dirY, planeX,
   if (!G.devices || G.devices.length === 0) return;
 
   for (const device of G.devices) {
-    if (device.type !== 'camera' && device.type !== 'lightpanel' && device.type !== 'neonpanel') {
-      continue;
-    }
+    const type = String(device.type || '').toLowerCase();
+    const nodeType = String(device.nodeType || '').toLowerCase();
+    const isCam = type === 'cam' || type === 'camera';
+    const isLightPanel = type === 'lightpanel' || (type === 'distract' && nodeType === 'lights');
+    const isNeonPanel = type === 'neonpanel' || (type === 'distract' && (nodeType === 'wallpanel' || nodeType === 'junction'));
 
-    const devX = device.x;
-    const devY = device.y;
+    if (!isCam && !isLightPanel && !isNeonPanel) continue;
 
-    // Relative position to camera
+    const devX = Number(device.x || 0) + 0.5;
+    const devY = Number(device.y || 0) + 0.5;
     const dx = devX - px;
     const dy = devY - py;
 
-    // Transform to camera space using correct raycaster matrix
-    const transformX = invDet * ( dirY * dx - dirX * dy);
+    const transformX = invDet * (dirY * dx - dirX * dy);
     const transformY = invDet * (-planeY * dx + planeX * dy);
+    if (transformY <= 0.12) continue;
 
-    // Skip if behind camera or too far
-    if (transformY <= 0.1) continue;
-
-    // Project to screen space (horizontal position)
-    const screenX = (W / 2) * (1 + transformX / transformY);
-    const screenY = halfH * 0.3; // Place sprites near top of ceiling
-    const spriteScale = 16 / transformY; // Scale based on distance
-
-    // Determine sprite index and image
-    let spriteImage = null;
-    let spriteCol = 0;
-    let spriteWidth = 32;
-    let spriteHeight = 32;
-
-    if (device.type === 'camera') {
-      if (!G.camSpriteLoaded || !G.camSpriteImage) continue;
-      spriteImage = G.camSpriteImage;
-      // TODO: Check if hacked and use offline sprite (col 1)
-      spriteCol = 0;
-      spriteWidth = G.camSpriteImage.naturalWidth / 2 || 32;
-      spriteHeight = G.camSpriteImage.naturalHeight || 32;
-    } else if (device.type === 'lightpanel') {
-      if (!G.lightPanelSpriteLoaded || !G.lightPanelSpriteImage) continue;
-      spriteImage = G.lightPanelSpriteImage;
-      // TODO: Check if hacked and use hacked sprite (col 1)
-      spriteCol = 0;
-      spriteWidth = G.lightPanelSpriteImage.naturalWidth / 2 || 32;
-      spriteHeight = G.lightPanelSpriteImage.naturalHeight || 32;
-    } else if (device.type === 'neonpanel') {
-      if (!G.neonPanelSpriteLoaded || !G.neonPanelSpriteImage) continue;
-      spriteImage = G.neonPanelSpriteImage;
-      // TODO: Check if hacked and use offline sprite (position 2:4)
-      spriteCol = 0;
-      spriteWidth = G.neonPanelSpriteImage.naturalWidth / 2 || 32;
-      spriteHeight = G.neonPanelSpriteImage.naturalHeight / 4 || 32;
+    const screenX = ((W / 2) * (1 + transformX / transformY));
+    const centerX = Math.max(0, Math.min(W - 1, screenX | 0));
+    if (zBuffer && Number.isFinite(zBuffer[centerX]) && transformY > zBuffer[centerX] + 0.02) {
+      continue;
     }
 
-    if (!spriteImage) continue;
+    const isOffline = !!(device.offline || device.hacked || device.active);
 
-    // Draw sprite at calculated position
-    const drawW = spriteScale * spriteWidth * 0.5; // Scale for distance
-    const drawH = spriteScale * spriteHeight * 0.5;
-    const drawX = screenX - drawW / 2;
-    const drawY = screenY - drawH / 2;
+    let spriteImage = null;
+    let srcX = 0;
+    let srcY = 0;
+    let srcW = 0;
+    let srcH = 0;
 
-    // Clamp to ceiling area
+    if (isCam) {
+      if (!G.camSpriteLoaded || !G.camSpriteImage) continue;
+      spriteImage = G.camSpriteImage;
+      srcW = Math.max(1, ((spriteImage.naturalWidth || spriteImage.width || 0) / 2) | 0);
+      srcH = Math.max(1, (spriteImage.naturalHeight || spriteImage.height || 0) | 0);
+      srcX = (isOffline ? CAM_SPRITE_OFFLINE : 0) * srcW;
+    } else if (isLightPanel) {
+      if (!G.lightPanelSpriteLoaded || !G.lightPanelSpriteImage) continue;
+      spriteImage = G.lightPanelSpriteImage;
+      srcW = Math.max(1, ((spriteImage.naturalWidth || spriteImage.width || 0) / 2) | 0);
+      srcH = Math.max(1, (spriteImage.naturalHeight || spriteImage.height || 0) | 0);
+      srcX = (isOffline ? LIGHT_PANEL_SPRITE_HACKED : 0) * srcW;
+    } else {
+      if (!G.neonPanelSpriteLoaded || !G.neonPanelSpriteImage) continue;
+      spriteImage = G.neonPanelSpriteImage;
+      srcW = Math.max(1, ((spriteImage.naturalWidth || spriteImage.width || 0) / NEON_PANEL_SPRITE_COLS) | 0);
+      srcH = Math.max(1, ((spriteImage.naturalHeight || spriteImage.height || 0) / 4) | 0);
+      const frame = isOffline ? NEON_PANEL_SPRITE_OFFLINE : 0;
+      srcX = (frame % NEON_PANEL_SPRITE_COLS) * srcW;
+      srcY = ((frame / NEON_PANEL_SPRITE_COLS) | 0) * srcH;
+    }
+
+    if (!spriteImage || srcW <= 0 || srcH <= 0) continue;
+
+    const worldH = halfH * 2;
+    const drawH = Math.max(10, Math.min(worldH * 0.6, (worldH / Math.max(0.22, transformY)) * 0.2));
+    const drawW = drawH * (srcW / srcH);
+    const drawX = screenX - drawW * 0.5;
+    const ceilingAnchorY = halfH - (halfH / Math.max(0.22, transformY));
+    const drawY = ceilingAnchorY - drawH * 0.08;
+
     if (drawX + drawW < 0 || drawX > W || drawY + drawH < 0 || drawY > halfH) continue;
 
-    ctx.globalAlpha = 0.9;
-    ctx.drawImage(
-      spriteImage,
-      spriteCol * spriteWidth, 0, spriteWidth, spriteHeight,
-      drawX, drawY, drawW, drawH
-    );
-    ctx.globalAlpha = 1.0;
+    ctx.globalAlpha = 0.92;
+    ctx.drawImage(spriteImage, srcX, srcY, srcW, srcH, drawX, drawY, drawW, drawH);
+    ctx.globalAlpha = 1;
   }
 }
 
