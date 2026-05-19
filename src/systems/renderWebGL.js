@@ -42,6 +42,7 @@ let uniformFloorMaxDist = null;
 let uniformZMaxDist = null;
 let uniformTime = null;
 let uniformDecalQuality = null;
+let uniformRunWallTint = null;
 
 let lastWallAtlasCanvas = null;
 let lastWallAtlasW = 0;
@@ -61,7 +62,7 @@ let lastMapH = 0;
 const WALL_FOG_DIST = 14;
 const Z_MAX_DIST = 24;
 const DECAL_ATLAS_COLS = 2;
-const DECAL_ATLAS_ROWS = 1;
+const DECAL_ATLAS_ROWS = 4;
 
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
@@ -117,6 +118,7 @@ function createProgram(gl) {
     uniform float uZMaxDist;
     uniform float uTime;
     uniform float uDecalQuality;
+    uniform vec3 uRunWallTint;
 
     float hash12(vec2 p) {
       vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -259,6 +261,10 @@ function createProgram(gl) {
         col = texture2D(uWallAtlasTex, uv).rgb;
       } else {
         col = wallBase(hitTile);
+      }
+
+      if (abs(hitTile - 1.0) < 0.5) {
+        col *= uRunWallTint;
       }
 
       float fog = max(0.12, 1.0 - distN);
@@ -404,7 +410,7 @@ function ensureCanvas(G) {
   const glCanvas = document.createElement('canvas');
   glCanvas.id = 'gc-gl';
   glCanvas.style.position = 'fixed';
-  glCanvas.style.top = '36px';
+  glCanvas.style.top = '0';
   glCanvas.style.left = '0';
   glCanvas.style.right = '0';
   glCanvas.style.bottom = '0';
@@ -529,6 +535,7 @@ export function initWebGLRenderer(G) {
   uniformZMaxDist = gl.getUniformLocation(program, 'uZMaxDist');
   uniformTime = gl.getUniformLocation(program, 'uTime');
   uniformDecalQuality = gl.getUniformLocation(program, 'uDecalQuality');
+  uniformRunWallTint = gl.getUniformLocation(program, 'uRunWallTint');
 
   gl.bindBuffer(gl.ARRAY_BUFFER, glBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -563,6 +570,9 @@ export function resizeWebGLRenderer(G, width, height) {
   if (!G.webglEnabled || !G.glCanvas || !G.gl) return;
   G.glCanvas.width = width;
   G.glCanvas.height = height;
+  // Sync CSS position to match the 2D canvas exactly (same coverage, no scaling)
+  const rightMargin = Math.max(0, window.innerWidth - width);
+  G.glCanvas.style.right = rightMargin + 'px';
   G.gl.viewport(0, 0, width, height);
   glLastWidth = width;
   glLastHeight = height;
@@ -895,6 +905,13 @@ export function renderRaycastWebGL(G, params) {
   gl.uniform1f(uniformZMaxDist, Z_MAX_DIST);
   gl.uniform1f(uniformTime, (nowMs || 0));
   gl.uniform1f(uniformDecalQuality, Math.max(0, Math.min(2, decalQuality || 0)));
+  const tint = G.runWallTint || { r: 1, g: 1, b: 1 };
+  gl.uniform3f(
+    uniformRunWallTint,
+    Math.max(0.5, Math.min(1.1, Number(tint.r) || 1)),
+    Math.max(0.5, Math.min(1.1, Number(tint.g) || 1)),
+    Math.max(0.5, Math.min(1.1, Number(tint.b) || 1)),
+  );
 
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   return true;

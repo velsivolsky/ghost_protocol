@@ -1,7 +1,8 @@
 import { G } from '../core/state.js';
-import { MOUSE_SENSITIVITY } from '../core/constants.js';
+import { TILE_TYPES } from '../core/constants.js';
 import { closeCtx, handleCanvasClick } from './hacking.js';
-import { cycleWallRenderQuality, setWallRenderQuality } from './render.js';
+import { cycleWallRenderQuality, patchTileFlat, setWallRenderQuality } from './render.js';
+import { log } from './ui.js';
 import {
   autocompleteTerminalInput,
   closeTerminalOverlay,
@@ -10,7 +11,6 @@ import {
 } from './terminalRuntime.js';
 
 let bound = false;
-let pointerLocked = false;
 
 export function bindInput() {
   if (bound) {
@@ -61,13 +61,18 @@ export function bindInput() {
       return;
     }
 
+    if ((event.key === 'e' || event.key === 'E') && !event.repeat) {
+      if (!isTerminalOverlayOpen()) {
+        event.preventDefault();
+        interactWithNearestDoor();
+        return;
+      }
+    }
+
     G.keys[event.key] = true;
 
     if (event.key === 'Escape') {
       closeCtx();
-      if (pointerLocked) {
-        document.exitPointerLock();
-      }
     }
   });
 
@@ -81,38 +86,72 @@ export function bindInput() {
     }
   });
 
-  // Canvas click: request pointer lock (FPS mode) when game is active
   G.canvas.addEventListener('click', (event) => {
-    if (!G.P || G.dead || G.cleared || G.menuActive) {
-      handleCanvasClick(event);
-      return;
-    }
-    if (!pointerLocked) {
-      G.canvas.requestPointerLock();
-    } else {
-      handleCanvasClick(event);
-    }
-  });
-
-  // Pointer lock change
-  document.addEventListener('pointerlockchange', () => {
-    pointerLocked = document.pointerLockElement === G.canvas;
-    // Show/hide lock hint
-    const hint = document.getElementById('pointer-lock-hint');
-    if (hint) {
-      hint.style.display = pointerLocked ? 'none' : 'flex';
-    }
-  });
-
-  // Mouse look — only active when pointer is locked and terminal closed
-  document.addEventListener('mousemove', (event) => {
-    if (!pointerLocked || !G.P || isTerminalOverlayOpen()) {
-      return;
-    }
-    G.P.angle += event.movementX * MOUSE_SENSITIVITY;
+    handleCanvasClick(event);
   });
 }
 
-export function isPointerLocked() {
-  return pointerLocked;
+function interactWithNearestDoor() {
+  if (!G.P || G.dead || G.cleared || G.menuActive || isTerminalOverlayOpen()) {
+    return;
+  }
+
+  // Check for nearby elevator (STAIR) tiles first
+  const px = G.P.x;
+  const py = G.P.y;
+  const tileX = px | 0;
+  const tileY = py | 0;
+  let nearestStair = null;
+  let nearestStairDist = Infinity;
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const tx = tileX + dx;
+      const ty = tileY + dy;
+      const t = G.tiles?.[ty]?.[tx];
+      if (t === TILE_TYPES.STAIR_UP || t === TILE_TYPES.STAIR_DOWN) {
+        const dist = Math.hypot((tx + 0.5) - px, (ty + 0.5) - py);
+        if (dist < 1.35 && dist < nearestStairDist) {
+          nearestStairDist = dist;
+          nearestStair = { x: tx, y: ty, tile: t };
+        }
+      }
+    }
+  }
+  if (nearestStair) {
+    G.stairTransitionTargetTile = nearestStair.tile;
+    G.stairTransitionRequested = true;
+    return;
+  }
+
+  const nearestDoor = (G.doors || [])
+    .slice()
+    .sort((a, b) => {
+      const adx = (a.x + 0.5) - G.P.x;
+      const ady = (a.y + 0.5) - G.P.y;
+      const bdx = (b.x + 0.5) - G.P.x;
+      const bdy = (b.y + 0.5) - G.P.y;
+      return (adx * adx + ady * ady) - (bdx * bdx + bdy * bdy);
+    })[0];
+
+  if (!nearestDoor) {
+    return;
+  }
+
+  const dx = (nearestDoor.x + 0.5) - G.P.x;
+  const dy = (nearestDoor.y + 0.5) - G.P.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > 1.35) {
+    return;
+  }
+
+  if (!nearestDoor.unlocked) {
+    log(`Drzwi ${nearestDoor.id}: panel zablokowany. Odblokuj: connect panel_# -> unlock`, 'w');
+    return;
+  }
+
+  nearestDoor.open = !nearestDoor.open;
+  const newTile = nearestDoor.open ? TILE_TYPES.DOOR_OPEN : TILE_TYPES.DOOR_CLOSED;
+  G.tiles[nearestDoor.y][nearestDoor.x] = newTile;
+  patchTileFlat(nearestDoor.x, nearestDoor.y, newTile);
+  log(`Drzwi ${nearestDoor.id} ${nearestDoor.open ? 'otwarte' : 'zamkniete'} [E]`, 'ok');
 }

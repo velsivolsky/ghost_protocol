@@ -53,7 +53,7 @@ function getTutorialMissionText() {
   }
 
   if (step === 4) {
-    return 'TUTORIAL | Otwórz drzwi: <b>connect panel_1</b> -> <b>unlock</b> -> <b>disconnect</b>';
+    return 'TUTORIAL | Odblokuj drzwi: <b>connect panel_1</b> -> <b>unlock</b>, potem otworz <b>E</b>';
   }
 
   if (step === 5) {

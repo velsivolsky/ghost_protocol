@@ -1,4 +1,5 @@
 import { HACK_RANGE, TILE_TYPES } from '../core/constants.js';
+import { patchTileFlat, setWallRenderQuality } from './render.js';
 import { G, byType } from '../core/state.js';
 import { clamp, dst } from '../utils/math.js';
 import { log, rebuildList, refreshHUD } from './ui.js';
@@ -17,6 +18,7 @@ import {
   handleUploadCreds,
   handleUploadPayload,
 } from './networkBreach.js';
+import { applyAudioMixSettings, getAudioMixSettings } from './audio.js';
 
 const TERMINAL_HEAT_DECAY_PER_SEC = 6.5;
 const TERMINAL_HEAT_OVERHEAT_DECAY_PER_SEC = 3.25;
@@ -71,6 +73,9 @@ const COMMAND_HEAT_COSTS = {
   upload_creds: 12,
   upload_payload: 10,
   abort_breach: 0,
+  game_options: 0,
+  options_save: 0,
+  options_cancel: 0,
 };
 
 const COMMAND_BW_COSTS = {
@@ -106,6 +111,9 @@ const COMMAND_BW_COSTS = {
   upload_payload: 10,
   abort_breach: 0,
   ddos: 10,
+  game_options: 0,
+  options_save: 0,
+  options_cancel: 0,
 };
 
 const TERMINAL_ARCHETYPES = [
@@ -225,6 +233,7 @@ export function resetTerminalRuntime() {
   G.terminalRuntime.bootLineShown = false;
   G.terminalRuntime.systemDirectiveShown = false;
   G.terminalRuntime.mainPayloadUploaded = false;
+  G.terminalRuntime.optionsMenu = null;
   G.traceRuntime.value = 0;
   G.traceRuntime.velocity = 0;
   G.traceRuntime.tier = 0;
@@ -521,7 +530,11 @@ function queueTerminalCommand(rawInput) {
   }
 
   // Block non-breach commands in main_breach context
-  if (G.terminalRuntime.commandContext === 'main_breach' && def.requiredContext !== 'main_breach' && commandId !== 'disconnect') {
+  if (
+    G.terminalRuntime.commandContext === 'main_breach' &&
+    def.requiredContext !== 'main_breach' &&
+    !['disconnect', 'game_options', 'options_save', 'options_cancel'].includes(parsed.commandId)
+  ) {
     pushTerminalLine('ACCESS DENIED. PROVIDE AUTHENTICATION CREDENTIALS', 'bad');
     return;
   }
@@ -616,6 +629,21 @@ function resolveCommandExecution(pending) {
   if (commandId === 'tutorial') {
     runTutorial();
     noteTutorialCommand('tutorial', args);
+    return;
+  }
+
+  if (commandId === 'game_options') {
+    runGameOptions();
+    return;
+  }
+
+  if (commandId === 'options_save') {
+    runGameOptionsSave();
+    return;
+  }
+
+  if (commandId === 'options_cancel') {
+    runGameOptionsCancel();
     return;
   }
 
@@ -762,6 +790,12 @@ function resolveCommandExecution(pending) {
   if (commandId === 'unlock') {
     runUnlock(args, target);
     noteTutorialCommand('unlock', args);
+    return;
+  }
+
+  if (commandId === 'open') {
+    runOpen(args, target);
+    noteTutorialCommand('open', args);
     return;
   }
 
@@ -1461,24 +1495,26 @@ function runSetFriendly(target) {
 function runUnlock(args, target) {
   if (!target) {
     pushTerminalLine('unlock failed: no uplink.', 'warn');
-    pushTerminalLine('door flow: scan local -> connect panel_# -> unlock', 'dim');
+    pushTerminalLine('door flow: connect panel_# -> unlock -> connect door_# -> open', 'dim');
     return;
   }
 
   if (target.type === 'door') {
-    target.ref.open = true;
-    G.tiles[target.ref.y][target.ref.x] = TILE_TYPES.DOOR_OPEN;
-    pushTerminalLine(`door unlocked: ${target.id}`, 'ok');
+    pushTerminalLine(`cannot unlock door directly. unlock via control panel.`, 'warn');
+    pushTerminalLine('procedure: connect panel_# -> unlock', 'dim');
     return;
   }
 
   if (target.type === 'wterm' && target.ref?.doorId) {
     const door = G.doors.find((item) => item.id === target.ref.doorId);
     if (door) {
-      door.open = true;
-      G.tiles[door.y][door.x] = TILE_TYPES.DOOR_OPEN;
-      pushTerminalLine(`door route unlocked via ${target.id}`, 'ok');
-      pushTerminalLine(`if needed: disconnect`, 'dim');
+      door.unlocked = true;
+      if (G.tiles[door.y]?.[door.x] === TILE_TYPES.DOOR_LOCKED) {
+        G.tiles[door.y][door.x] = TILE_TYPES.DOOR_CLOSED;
+        patchTileFlat(door.x, door.y, TILE_TYPES.DOOR_CLOSED);
+      }
+      pushTerminalLine(`panel unlocked: ${target.id}`, 'ok');
+      pushTerminalLine(`door route available. next: connect door_# -> open`, 'dim');
       return;
     }
   }
@@ -1502,7 +1538,36 @@ function runUnlock(args, target) {
   }
 
   pushTerminalLine(`unlock unsupported for ${target.type}`, 'warn');
-  pushTerminalLine('try connecting to a wall terminal / panel near the door', 'dim');
+  pushTerminalLine('connect to wall panel near the door', 'dim');
+}
+
+function runOpen(args, target) {
+  if (!target) {
+    pushTerminalLine('open failed: no uplink.', 'warn');
+    return;
+  }
+
+  if (target.type !== 'door') {
+    pushTerminalLine(`cannot open non-door: ${target.type}`, 'warn');
+    return;
+  }
+
+  const door = target.ref;
+  if (!door) {
+    pushTerminalLine('door reference invalid.', 'bad');
+    return;
+  }
+
+  if (!door.unlocked) {
+    pushTerminalLine(`door panel locked. unlock panel first: connect panel_# -> unlock`, 'warn');
+    return;
+  }
+
+  door.open = !door.open;
+  const newTile = door.open ? TILE_TYPES.DOOR_OPEN : TILE_TYPES.DOOR_CLOSED;
+  G.tiles[door.y][door.x] = newTile;
+  patchTileFlat(door.x, door.y, newTile);
+  pushTerminalLine(`door ${door.open ? 'opened' : 'closed'}: ${target.id}`, 'ok');
 }
 
 function runReroute(_args, target) {
@@ -1831,6 +1896,38 @@ function handleTerminalInputKeyDown(event) {
     return;
   }
 
+  if (isGameOptionsMenuOpen()) {
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      moveGameOptionsSelection(-1);
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      moveGameOptionsSelection(1);
+      return;
+    }
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      adjustGameOptionsSelection(-1);
+      return;
+    }
+
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      adjustGameOptionsSelection(1);
+      return;
+    }
+
+    if (event.key === ' ' || event.key === 'Spacebar') {
+      event.preventDefault();
+      toggleGameOptionsSelection();
+      return;
+    }
+  }
+
   if (event.key === 'Enter') {
     event.preventDefault();
     executeTerminalInput();
@@ -1876,6 +1973,175 @@ function handleTerminalInputKeyDown(event) {
   }
 }
 
+function isGameOptionsMenuOpen() {
+  return !!G.terminalRuntime?.optionsMenu?.open;
+}
+
+function runGameOptions() {
+  const mix = getAudioMixSettings();
+  const currentQuality = normalizeRenderQualitySetting(G.wallRenderQuality);
+  G.terminalRuntime.optionsMenu = {
+    open: true,
+    selected: 0,
+    draft: {
+      musicStep: toVolumeStep(mix.musicVolume),
+      footstepsStep: toVolumeStep(mix.footstepsVolume),
+      muted: !!mix.muted,
+      renderQuality: currentQuality,
+    },
+  };
+
+  renderGameOptionsPanel();
+}
+
+function runGameOptionsSave() {
+  if (!isGameOptionsMenuOpen()) {
+    pushTerminalLine('game_options is not active.', 'warn');
+    return;
+  }
+
+  const draft = G.terminalRuntime.optionsMenu.draft;
+  applyAudioMixSettings(
+    {
+      musicVolume: draft.musicStep / 10,
+      footstepsVolume: draft.footstepsStep / 10,
+      muted: !!draft.muted,
+    },
+    true,
+  );
+  setWallRenderQuality(G, mapRenderQualityToInternal(draft.renderQuality));
+  G.terminalRuntime.optionsMenu = null;
+  pushTerminalLine('options saved.', 'ok');
+  pushTerminalLine(
+    `audio: music ${draft.musicStep}/10 | footsteps ${draft.footstepsStep}/10 | mute ${draft.muted ? 'on' : 'off'}`,
+    'dim',
+  );
+  pushTerminalLine(`graphics: render ${draft.renderQuality.toUpperCase()}`, 'dim');
+}
+
+function runGameOptionsCancel() {
+  if (!isGameOptionsMenuOpen()) {
+    pushTerminalLine('game_options is not active.', 'warn');
+    return;
+  }
+
+  G.terminalRuntime.optionsMenu = null;
+  pushTerminalLine('options canceled.', 'sys');
+}
+
+function moveGameOptionsSelection(delta) {
+  if (!isGameOptionsMenuOpen()) {
+    return;
+  }
+
+  const state = G.terminalRuntime.optionsMenu;
+  const max = 3;
+  state.selected = (state.selected + delta + (max + 1)) % (max + 1);
+  renderGameOptionsPanel();
+}
+
+function adjustGameOptionsSelection(delta) {
+  if (!isGameOptionsMenuOpen() || delta === 0) {
+    return;
+  }
+
+  const state = G.terminalRuntime.optionsMenu;
+  const draft = state.draft;
+  if (state.selected === 0) {
+    draft.musicStep = clampVolumeStep(draft.musicStep + delta);
+  } else if (state.selected === 1) {
+    draft.footstepsStep = clampVolumeStep(draft.footstepsStep + delta);
+  } else if (state.selected === 2) {
+    draft.muted = !draft.muted;
+  } else if (state.selected === 3) {
+    const values = ['low', 'mid', 'high'];
+    const idx = values.indexOf(draft.renderQuality);
+    const next = (idx + delta + values.length) % values.length;
+    draft.renderQuality = values[next];
+  }
+
+  renderGameOptionsPanel();
+}
+
+function toggleGameOptionsSelection() {
+  if (!isGameOptionsMenuOpen()) {
+    return;
+  }
+
+  const state = G.terminalRuntime.optionsMenu;
+  if (state.selected === 2) {
+    state.draft.muted = !state.draft.muted;
+    renderGameOptionsPanel();
+  }
+}
+
+function renderGameOptionsPanel() {
+  if (!isGameOptionsMenuOpen()) {
+    return;
+  }
+
+  runClear();
+  const state = G.terminalRuntime.optionsMenu;
+  const draft = state.draft;
+
+  pushTerminalLine('GAME OPTIONS', 'ok');
+  pushTerminalLine('arrow up/down: select | arrow left/right: change | space: toggle mute', 'dim');
+  pushTerminalLine('type: save  or  cancel', 'dim');
+  pushTerminalLine('', 'sys', true);
+
+  pushTerminalLine('DZWIEK', 'ok');
+  pushTerminalLine(
+    `${selectionMark(state.selected === 0)} Glosnosc muzyki ${formatVolumeSlider(draft.musicStep)}`,
+    state.selected === 0 ? 'warn' : 'sys',
+  );
+  pushTerminalLine(
+    `${selectionMark(state.selected === 1)} Glosnosc krokow ${formatVolumeSlider(draft.footstepsStep)}`,
+    state.selected === 1 ? 'warn' : 'sys',
+  );
+  pushTerminalLine(
+    `${selectionMark(state.selected === 2)} Wycisz [${draft.muted ? 'x' : ' '}]`,
+    state.selected === 2 ? 'warn' : 'sys',
+  );
+  pushTerminalLine('', 'sys', true);
+
+  pushTerminalLine('GRAFIKA', 'ok');
+  pushTerminalLine(
+    `${selectionMark(state.selected === 3)} Render ${draft.renderQuality.toUpperCase()}`,
+    state.selected === 3 ? 'warn' : 'sys',
+  );
+}
+
+function selectionMark(selected) {
+  return selected ? '[x]' : '[ ]';
+}
+
+function toVolumeStep(volume) {
+  return clampVolumeStep(Math.round((Number(volume) || 0) * 10));
+}
+
+function clampVolumeStep(step) {
+  return Math.max(0, Math.min(10, Number(step) || 0));
+}
+
+function formatVolumeSlider(step) {
+  const safe = clampVolumeStep(step);
+  return `[${'-'.repeat(safe)}|${'-'.repeat(10 - safe)}]`;
+}
+
+function normalizeRenderQualitySetting(value) {
+  const raw = String(value || '').toLowerCase();
+  if (raw === 'high') return 'high';
+  if (raw === 'balanced' || raw === 'mid' || raw === 'medium') return 'mid';
+  return 'low';
+}
+
+function mapRenderQualityToInternal(value) {
+  const normalized = normalizeRenderQualitySetting(value);
+  if (normalized === 'high') return 'high';
+  if (normalized === 'mid') return 'balanced';
+  return 'low';
+}
+
 function runHelp(args) {
   const topic = (args[0] || '').toLowerCase();
   const target = resolveConnectedTarget();
@@ -1892,7 +2158,8 @@ function runHelp(args) {
     pushTerminalLine('help basics  | help doors  | help cameras  | help stealth', 'dim');
     pushTerminalLine('help guards  | help technicians  | help terminals  | help mainterm', 'dim');
     pushTerminalLine('help distraction', 'dim');
-    pushTerminalLine('tutorial     | clear       | scan local  | scan network', 'dim');
+    pushTerminalLine('tutorial     | clear       | game_options | scan local  | scan network', 'dim');
+    pushTerminalLine('save         | cancel', 'dim');
     pushTerminalLine('core commands:', 'dim');
     for (const item of COMMAND_REGISTRY) {
       pushTerminalLine(item.help, 'dim');
@@ -1914,12 +2181,13 @@ function runHelp(args) {
 
   if (topic === 'doors') {
     pushTerminalLine('DOOR FLOW', 'ok');
-    pushTerminalLine('most doors are opened through a nearby wall terminal/panel.', 'dim');
+    pushTerminalLine('most doors are unlocked through a nearby wall terminal/panel.', 'dim');
     pushTerminalLine('step 1: scan local', 'dim');
     pushTerminalLine('step 2: find panel_# or door_# in the scan results', 'dim');
     pushTerminalLine('step 3: connect panel_1', 'dim');
     pushTerminalLine('step 4: unlock', 'dim');
-    pushTerminalLine('example: scan local -> connect panel_1 -> unlock -> disconnect', 'dim');
+    pushTerminalLine('step 5: approach door and press E', 'dim');
+    pushTerminalLine('example: scan local -> connect panel_1 -> unlock -> E', 'dim');
     pushTerminalLine('if direct door id exists: connect door_1 -> unlock', 'dim');
     return;
   }

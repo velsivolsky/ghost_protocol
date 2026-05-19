@@ -20,8 +20,6 @@ export function canWalk(tiles, x, y) {
 		tile === TILE_TYPES.HIDE_SPOT ||
 		tile === TILE_TYPES.ENTRANCE ||
 		tile === TILE_TYPES.EXIT_USED ||
-		tile === TILE_TYPES.STAIR_UP ||
-		tile === TILE_TYPES.STAIR_DOWN ||
 		tile === TILE_TYPES.SIDE_TERMINAL ||
 		tile === TILE_TYPES.DOOR_OPEN
 	);

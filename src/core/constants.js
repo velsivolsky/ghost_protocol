@@ -22,6 +22,33 @@ export const CAM_SPRITE_OFFLINE = 1;
 export const LIGHT_PANEL_SPRITE_SRC = 'assets/tilesets/light_panel.png';
 export const LIGHT_PANEL_SPRITE_ONLINE = 0;
 export const LIGHT_PANEL_SPRITE_HACKED = 1;
+export const TECHNIC_SPRITE_SRC = 'assets/tilesets/technic.png';
+export const TECHNIC_SPRITE_COLS = 1;
+export const TECHNIC_SPRITE_ROWS = 1;
+export const LAMP_SPRITE_SRC = 'assets/tilesets/lamp.png';
+export const LAMP_SPRITE_COLS = 4;
+export const LAMP_SPRITE_ROWS = 4;
+export const LAMP_SPRITE_ROW_ON = 0;
+export const LAMP_SPRITE_ROW_FLICKER = 1;
+export const LAMP_SPRITE_ROW_ALERT = 2;
+export const LAMP_SPRITE_ROW_OFF = 3;
+export const VENT_SPRITE_SRC = 'assets/tilesets/vent.png';
+export const VENT_SPRITE_COLS = 1;
+export const VENT_SPRITE_ROWS = 2;
+export const VENT_SPRITE_ONLINE = 0;
+export const VENT_SPRITE_OFFLINE = 1;
+export const ELEVATOR_SPRITE_SRC = 'assets/tilesets/elevator.png';
+export const DOOR_SPRITE_SRC = 'assets/tilesets/doors.png';
+export const ELEVATOR_SPRITE_COLS = 5;
+export const ELEVATOR_SPRITE_ROWS = 1;
+export const ELEVATOR_SPRITE_BACK = 0;
+export const ELEVATOR_SPRITE_WALL_LEFT = 1;
+export const ELEVATOR_SPRITE_WALL_RIGHT = 2;
+export const ELEVATOR_SPRITE_FRONT_ONLINE = 3;
+export const ELEVATOR_SPRITE_FRONT_OFFLINE = 4;
+export const SAFE_VENT_SPRITE_SRC = 'assets/tilesets/safe_vent.png';
+export const SAFE_VENT_SPRITE_COLS = 1;
+export const SAFE_VENT_SPRITE_ROWS = 1;
 export const NEON_PANEL_SPRITE_SRC = 'assets/tilesets/neon_panel.png';
 export const NEON_PANEL_SPRITE_COLS = 2;
 export const NEON_PANEL_SPRITE_ROWS = 4;
@@ -45,6 +72,7 @@ export const TILE_TYPES = {
   STAIR_DOWN: 11,
   DOOR_LOCKED: 12,
   CODE_TERMINAL: 13,
+  ELEVATOR: 14,
 };
 
 export const MAIN_HACK_DISTANCE = 1.8;

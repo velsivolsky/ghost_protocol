@@ -1,4 +1,5 @@
 import { G, byType } from '../core/state.js';
+import { TILE_TYPES } from '../core/constants.js';
 import { clamp, dst } from '../utils/math.js';
 import { killPlayer } from '../systems/mission.js';
 import { floatMsg, log, rebuildList } from '../systems/ui.js';
@@ -27,6 +28,9 @@ export function createDrone(index, room, wave) {
 
 export function tickDrone(drone, dt) {
   const player = G.P;
+  const playerTileX = player.x | 0;
+  const playerTileY = player.y | 0;
+  const playerHidden = G.tiles?.[playerTileY]?.[playerTileX] === TILE_TYPES.HIDE_SPOT;
 
   if (drone.hijacked) {
     const enemy = byType('guard')
@@ -62,7 +66,7 @@ export function tickDrone(drone, dt) {
   drone.x = drone.ocx + Math.cos(drone.angle) * drone.radius;
   drone.y = drone.ocy + Math.sin(drone.angle) * drone.radius;
 
-  if (dst(drone, player) < 2 && !G.blackout) {
+  if (!playerHidden && dst(drone, player) < 2 && !G.blackout) {
     G.alert = clamp(G.alert + dt * 0.012);
 
     if (dst(drone, player) < 1) {

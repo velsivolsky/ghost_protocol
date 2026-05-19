@@ -94,6 +94,35 @@ function createTutorialState() {
   };
 }
 
+function createRunWallTint() {
+  const palette = Math.random();
+
+  if (palette < 0.34) {
+    // Cool cyan-green run palette.
+    return {
+      r: 0.82 + Math.random() * 0.2,
+      g: 0.96 + Math.random() * 0.16,
+      b: 0.9 + Math.random() * 0.2,
+    };
+  }
+
+  if (palette < 0.67) {
+    // Warm industrial run palette.
+    return {
+      r: 0.95 + Math.random() * 0.22,
+      g: 0.86 + Math.random() * 0.2,
+      b: 0.7 + Math.random() * 0.16,
+    };
+  }
+
+  // Default green-biased run palette.
+  return {
+    r: 0.82 + Math.random() * 0.2,
+    g: 0.96 + Math.random() * 0.2,
+    b: 0.78 + Math.random() * 0.18,
+  };
+}
+
 export const G = {
   canvas: null,
   ctx: null,
@@ -157,9 +186,25 @@ export const G = {
   lightPanelSpriteImage: null,
   lightPanelSpriteLoaded: false,
   lightPanelSpriteError: false,
+  technicSpriteImage: null,
+  technicSpriteLoaded: false,
+  technicSpriteError: false,
+  lampSpriteImage: null,
+  lampSpriteLoaded: false,
+  lampSpriteError: false,
+  ventSpriteImage: null,
+  ventSpriteLoaded: false,
+  ventSpriteError: false,
+  elevatorSpriteImage: null,
+  elevatorSpriteLoaded: false,
+  elevatorSpriteError: false,
+  safeVentSpriteImage: null,
+  safeVentSpriteLoaded: false,
+  safeVentSpriteError: false,
   neonPanelSpriteImage: null,
   neonPanelSpriteLoaded: false,
   neonPanelSpriteError: false,
+  runWallTint: { r: 1, g: 1, b: 1 },
 
   entrance: null,
   mainTerminal: null,
@@ -281,6 +326,7 @@ export const G = {
   stairTransitionCooldownMs: 0,
   stairTransitionArmed: true,
   stairTransitionRequested: false,
+  stairTransitionTargetTile: null,
   stairHintActive: false,
   hoverInfo: null,
   hoverScreen: { x: 0, y: 0 },
@@ -315,6 +361,7 @@ export function initWaveState({ wave, credits, map, devices }) {
     mainHacked: false,
     tiles: map.tiles,
     wallVariants: map.wallVariants || [],
+    runWallTint: createRunWallTint(),
     rooms: map.rooms,
     devices,
     visible: new Set(),
@@ -352,6 +399,7 @@ export function initWaveState({ wave, credits, map, devices }) {
     stairTransitionCooldownMs: 0,
     stairTransitionArmed: true,
     stairTransitionRequested: false,
+    stairTransitionTargetTile: null,
     stairHintActive: false,
     hoverInfo: null,
     hoverScreen: { x: 0, y: 0 },
@@ -422,6 +470,7 @@ export function initFloorState({ map, devices }) {
     stairTransitionCooldownMs: 0,
     stairTransitionArmed: true,
     stairTransitionRequested: false,
+    stairTransitionTargetTile: null,
     stairHintActive: false,
     hoverInfo: null,
     hoverScreen: { x: 0, y: 0 },

@@ -512,17 +512,61 @@
     </div>
   </div>
 
-  <div id="hud">
-    <div class="hi"><span class="hl">HP</span><div class="bar"><div class="bf g" id="bhp"></div></div></div>
-    <div class="hi"><span class="hl">BW</span><div class="bar"><div class="bf y" id="bbw"></div></div></div>
-    <div class="hi"><span class="hl">ALERT</span><div class="bar"><div class="bf r" id="bal"></div></div></div>
-    <div class="hi"><span class="hl">CREDITS</span><span style="color:#00ff9f;font-size:10px" id="vcr">¥0</span></div>
-    <div class="hi"><span class="hl">ZONE</span><span style="color:#00ff9f;font-size:10px" id="vz">SECTOR-01</span></div>
-    <div class="hi"><span class="hl">STATUS</span><span id="sv">GHOST</span></div>
-    <div class="hi" id="hud-code" style="display:none;"></div>
-    <div class="hi"><span class="hl">QH</span><span style="color:#ffbe73;font-size:9px" id="qh-stock-value">O:0 M:0 N:0 D:0</span></div>
-    <button id="music-toggle" class="icon-btn" aria-label="Wlacz dzwiek" title="Wlacz dzwiek"><span id="music-icon">🔇</span></button>
-    <div id="mission">—</div>
+  <div id="side-hud">
+    <div class="sh-header">// GHOST::PROTOCOL</div>
+    <div class="sh-divider"></div>
+
+    <div class="sh-zone-row">
+      <span class="sh-label">ZONE</span>
+      <span class="sh-zone-val" id="vz">SECTOR-01</span>
+    </div>
+
+    <div class="sh-minimap-wrap">
+      <canvas id="minimap-canvas"></canvas>
+    </div>
+
+    <div class="sh-status-row">
+      <span class="sh-label">STATUS</span>
+      <span class="sh-status-val" id="sv">GHOST</span>
+    </div>
+    <div class="sh-divider"></div>
+
+    <div class="sh-bar-row">
+      <span class="sh-label sh-sync">SYNC</span>
+      <span class="sh-ascii" id="bhp">[░░░░░░░░░░]</span>
+    </div>
+    <div class="sh-bar-row">
+      <span class="sh-label sh-bw">BW</span>
+      <span class="sh-ascii" id="bbw">[░░░░░░░░░░]</span>
+    </div>
+    <div class="sh-bar-row">
+      <span class="sh-label sh-alrt">ALRT</span>
+      <span class="sh-ascii" id="bal">[░░░░░░░░░░]</span>
+    </div>
+    <div class="sh-divider"></div>
+
+    <div class="sh-cr-row">
+      <span class="sh-label">CR</span>
+      <span class="sh-cr-val" id="vcr">¥0</span>
+    </div>
+    <div class="sh-divider"></div>
+
+    <div class="sh-qh-row">
+      <span class="sh-label">QH</span>
+      <span class="sh-qh-val" id="qh-stock-value">O:0 M:0 N:0 D:0</span>
+    </div>
+    <div class="sh-divider"></div>
+    <div class="sh-net-head">// SIEĆ LOKALNA</div>
+    <div id="tl" class="sh-tl"></div>
+
+    <div class="sh-divider"></div>
+
+    <div class="sh-code" id="hud-code" style="display:none;"></div>
+    <div class="sh-mission" id="mission">—</div>
+
+    <div class="sh-audio">
+      <button id="music-toggle" class="icon-btn" aria-label="Toggle audio" title="Toggle audio"><span id="music-icon">🔇</span></button>
+    </div>
   </div>
 
 
@@ -978,31 +1022,16 @@
 
   <canvas id="gc"></canvas>
 
-  <div id="sb">
-    <h3>// H.U.B. OPERACYJNY</h3>
-    <div id="hub-tabs" class="hub-tabs">
-      <button id="hub-tab-plan" class="hub-tab active" onclick="window.switchHubTab('plan')">PLANUJ RUN</button>
-      <button id="hub-tab-recruit" class="hub-tab" onclick="window.switchHubTab('recruit')">REKRUTACJA</button>
-    </div>
-
-    <div id="hub-plan" class="hub-section show">
-      <div class="hub-map-wrap">
-        <img src="./assets/city_map.png" alt="Mapa miasta" class="hub-city-map" />
-      </div>
-      <div id="hub-run-meta" class="hub-run-meta"></div>
-      <div id="hub-runs" class="hub-runs"></div>
-      <div class="hub-subhead">// SIEĆ LOKALNA</div>
-      <div id="tl"></div>
-      <div id="hack-upgrades-panel" class="hack-upgrades-panel" style="display:none;margin-top:10px;padding:8px;border:1px solid #00ff9f;background:#001a00;">
-        <h4 style="color:#00ff9f;font-size:11px;margin:0 0 6px 0;">HACK UPGRADES</h4>
-        <div id="hack-upgrades-list" style="font-size:8px;line-height:1.5;"></div>
-      </div>
-    </div>
-
-    <div id="hub-recruit" class="hub-section">
-      <div id="hub-crew" class="hub-crew"></div>
-      <div id="hub-contacts" class="hub-contacts"></div>
-    </div>
+  <!-- stubs: elementy wymagane przez JS, ukryte -->
+  <div id="sb" style="display:none;" aria-hidden="true">
+    <div id="hub-tabs"></div>
+    <div id="hub-plan"></div>
+    <div id="hub-run-meta"></div>
+    <div id="hub-runs"></div>
+    <div id="hub-recruit"></div>
+    <div id="hub-crew"></div>
+    <div id="hub-contacts"></div>
+    <div id="hack-upgrades-panel" style="display:none;"><div id="hack-upgrades-list"></div></div>
   </div>
 
   <div id="ctx">

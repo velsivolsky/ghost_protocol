@@ -30,6 +30,9 @@ export function createTechnician(index, room) {
 		dead: false,
 		desc: `Technik #${index + 1}`,
 		hackable: false,
+		frame: 0, // Aktualna klatka animacji
+		direction: 'S', // Kierunek (S, SE, E, NE, N, NW, W, SW)
+		state: 'IDLE', // Stan (IDLE, WALK, ALERT, DEATH)
 	};
 }
 
@@ -267,9 +270,5 @@ function isPlayerHiddenFromTech(technician) {
 	const tileY = G.P.y | 0;
 	const tile = G.tiles[tileY]?.[tileX];
 
-	if (tile !== TILE_TYPES.HIDE_SPOT) {
-		return false;
-	}
-
-	return dst(technician, G.P) > 1.3;
+	return tile === TILE_TYPES.HIDE_SPOT;
 }

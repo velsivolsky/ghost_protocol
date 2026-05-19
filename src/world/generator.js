@@ -226,13 +226,26 @@ export function generateMap(opts = {}) {
 
 	const shuffledDoors = doorCandidates.sort(() => Math.random() - 0.5);
 	const doorCount = Math.min(6, shuffledDoors.length);
+	const placedDoors = [];
 
-	for (let index = 0; index < doorCount; index += 1) {
+	for (let index = 0; index < shuffledDoors.length && placedDoors.length < doorCount; index += 1) {
 		const candidate = shuffledDoors[index];
-		const doorId = `door_${index + 1}`;
+
+		const isAdjacentToDoor = placedDoors.some((door) => {
+			const dx = Math.abs(door.x - candidate.x);
+			const dy = Math.abs(door.y - candidate.y);
+			return dx + dy <= 1;
+		});
+
+		if (isAdjacentToDoor) {
+			continue;
+		}
+
+		const doorId = `door_${placedDoors.length + 1}`;
 
 		tiles[candidate.y][candidate.x] = TILE_TYPES.DOOR_CLOSED;
-		doors.push({ id: doorId, x: candidate.x, y: candidate.y, open: false });
+		placedDoors.push({ x: candidate.x, y: candidate.y });
+		doors.push({ id: doorId, x: candidate.x, y: candidate.y, open: false, unlocked: false });
 
 		const panelOffsets = [
 			{ x: 0, y: -1 },
@@ -251,8 +264,8 @@ export function generateMap(opts = {}) {
 
 			tiles[py][px] = TILE_TYPES.WALL_TERMINAL;
 			wallTerminals.push({
-				id: `panel_${index + 1}`,
-				networkName: makeNetworkName('PANEL', opts.floorIdx || 0, index + 1),
+				id: `panel_${placedDoors.length}`,
+				networkName: makeNetworkName('PANEL', opts.floorIdx || 0, placedDoors.length),
 				x: px,
 				y: py,
 				doorId,
@@ -430,8 +443,8 @@ export function generateTutorialMap() {
 		},
 	];
 	const doors = [
-		{ id: 'door_1', x: 18, y: 10, open: false },
-		{ id: 'door_2', x: 24, y: 18, open: false },
+		{ id: 'door_1', x: 18, y: 10, open: false, unlocked: false },
+		{ id: 'door_2', x: 24, y: 18, open: false, unlocked: false },
 	];
 	const wallTerminals = [
 		{ id: 'panel_1', networkName: makeNetworkName('PANEL', 0, 1), x: 17, y: 10, doorId: 'door_1', desc: 'Panel drzwi A' },

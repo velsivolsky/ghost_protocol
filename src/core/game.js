@@ -1,6 +1,6 @@
 import { G, initWaveState } from './state.js';
 import { loadHubState, saveHubState } from './persistence.js';
-import { CEILING_ATLAS_SRC, CAM_SPRITE_SRC, FLOOR_ATLAS_SRC, GUARD_SPRITE_SRC, HUD_HEIGHT, LIGHT_PANEL_SPRITE_SRC, NEON_PANEL_SPRITE_SRC, TERMINAL_SHEET_SRC, WALL_ATLAS_SRC } from './constants.js';
+import { CEILING_ATLAS_SRC, CAM_SPRITE_SRC, DOOR_SPRITE_SRC, ELEVATOR_SPRITE_SRC, FLOOR_ATLAS_SRC, GUARD_SPRITE_SRC, HUD_HEIGHT, LAMP_SPRITE_SRC, LIGHT_PANEL_SPRITE_SRC, NEON_PANEL_SPRITE_SRC, SAFE_VENT_SPRITE_SRC, TECHNIC_SPRITE_SRC, TERMINAL_SHEET_SRC, VENT_SPRITE_SRC, WALL_ATLAS_SRC } from './constants.js';
 import { generateMultiFloorMap, generateTutorialMap } from '../world/generator.js';
 import { createCamera } from '../entities/camera.js';
 import { createGuard } from '../entities/guard.js';
@@ -212,6 +212,126 @@ function initLightPanelSprite() {
   };
 
   image.src = LIGHT_PANEL_SPRITE_SRC;
+}
+
+function initTechnicSprite() {
+  const image = new Image();
+
+  G.technicSpriteImage = image;
+  G.technicSpriteLoaded = false;
+  G.technicSpriteError = false;
+
+  image.onload = () => {
+    G.technicSpriteLoaded = true;
+    G.technicSpriteError = false;
+  };
+
+  image.onerror = () => {
+    G.technicSpriteLoaded = false;
+    G.technicSpriteError = true;
+  };
+
+  image.src = TECHNIC_SPRITE_SRC;
+}
+
+function initLampSprite() {
+  const image = new Image();
+
+  G.lampSpriteImage = image;
+  G.lampSpriteLoaded = false;
+  G.lampSpriteError = false;
+
+  image.onload = () => {
+    G.lampSpriteLoaded = true;
+    G.lampSpriteError = false;
+  };
+
+  image.onerror = () => {
+    G.lampSpriteLoaded = false;
+    G.lampSpriteError = true;
+  };
+
+  image.src = LAMP_SPRITE_SRC;
+}
+
+function initVentSprite() {
+  const image = new Image();
+
+  G.ventSpriteImage = image;
+  G.ventSpriteLoaded = false;
+  G.ventSpriteError = false;
+
+  image.onload = () => {
+    G.ventSpriteLoaded = true;
+    G.ventSpriteError = false;
+  };
+
+  image.onerror = () => {
+    G.ventSpriteLoaded = false;
+    G.ventSpriteError = true;
+  };
+
+  image.src = VENT_SPRITE_SRC;
+}
+
+function initDoorSprite() {
+  const image = new Image();
+
+  G.doorSpriteImage = image;
+  G.doorSpriteLoaded = false;
+  G.doorSpriteError = false;
+
+  image.onload = () => {
+    G.doorSpriteLoaded = true;
+    G.doorSpriteError = false;
+  };
+
+  image.onerror = () => {
+    G.doorSpriteLoaded = false;
+    G.doorSpriteError = true;
+  };
+
+  image.src = DOOR_SPRITE_SRC;
+}
+
+function initElevatorSprite() {
+  const image = new Image();
+
+  G.elevatorSpriteImage = image;
+  G.elevatorSpriteLoaded = false;
+  G.elevatorSpriteError = false;
+
+  image.onload = () => {
+    G.elevatorSpriteLoaded = true;
+    G.elevatorSpriteError = false;
+  };
+
+  image.onerror = () => {
+    G.elevatorSpriteLoaded = false;
+    G.elevatorSpriteError = true;
+  };
+
+  image.src = ELEVATOR_SPRITE_SRC;
+}
+
+function initSafeVentSprite() {
+  const image = new Image();
+
+  G.safeVentSpriteImage = image;
+  G.safeVentSpriteLoaded = false;
+  G.safeVentSpriteError = false;
+
+  image.onload = () => {
+    G.safeVentSpriteLoaded = true;
+    G.safeVentSpriteError = false;
+  };
+
+  image.onerror = () => {
+    G.safeVentSpriteLoaded = false;
+    G.safeVentSpriteError = true;
+  };
+
+  image.src = SAFE_VENT_SPRITE_SRC;
 }
 
 function initNeonPanelSprite() {
@@ -1328,6 +1448,12 @@ function switchStartMenuTab(tab) {
   }
 }
 
+// Ensure inline HTML handlers can call tab switching even if boot() has not
+// completed yet.
+if (typeof window !== 'undefined') {
+  window.SWITCH_START_MENU_TAB = switchStartMenuTab;
+}
+
 function hideMainMenu() {
   const menu = document.getElementById('main-menu');
   if (menu) {
@@ -1559,6 +1685,12 @@ export function boot() {
   initCeilingAtlas();
   initCamSprite();
   initLightPanelSprite();
+  initTechnicSprite();
+  initLampSprite();
+  initVentSprite();
+  initElevatorSprite();
+  initDoorSprite();
+  initSafeVentSprite();
   initNeonPanelSprite();
 
   resize();
@@ -1728,7 +1860,8 @@ function updateAmbientBg() {
 }
 
 function resize() {
-  G.canvas.width = window.innerWidth;
-  G.canvas.height = window.innerHeight - HUD_HEIGHT;
+  const sideW = 410;
+  G.canvas.width  = Math.max(320, window.innerWidth - sideW);
+  G.canvas.height = window.innerHeight;
   resizeWebGLRenderer(G, G.canvas.width, G.canvas.height);
 }

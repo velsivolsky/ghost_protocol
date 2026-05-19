@@ -24,6 +24,7 @@ import { resolveRunFailure } from './recruitment.js';
 import { tickTraceSystem } from './traceSystem.js';
 import { isTerminalOverlayOpen, noteMainHackChannelProgress, tickTerminalRuntime } from './terminalRuntime.js';
 import { tickTutorial, updateTutorialPanel } from './tutorial.js';
+import { tickFootsteps } from './audio.js';
 
 const STAIR_TRANSITION_COOLDOWN_MS = 900;
 
@@ -91,6 +92,7 @@ function getSpawnRooms(rooms) {
 
 export function update(dt) {
 	if (!G.P || G.dead || G.cleared || G.menuActive) {
+		tickFootsteps(0, false);
 		return;
 	}
 
@@ -99,6 +101,7 @@ export function update(dt) {
 	tickQuickHackWindow(dt);
 
 	if (G.paused) {
+		tickFootsteps(0, false);
 		refreshHUD();
 		rebuildList();
 		return;
@@ -201,6 +204,8 @@ export function update(dt) {
 	for (const distraction of byType('distract')) {
 		tickDistraction(distraction, simDt);
 	}
+
+	tickFootsteps(simDt, moved);
 
 	checkDeadGuardDiscovery();
 	tickTerminalRuntime(dt);
@@ -394,33 +399,15 @@ function checkExfiltration() {
 
 function checkStairTransition() {
 	if (!G.floors?.length) return false;
-
-	const tileX = G.P.x | 0;
-	const tileY = G.P.y | 0;
-	const tile = G.tiles[tileY]?.[tileX];
-	const onStairs = tile === TILE_TYPES.STAIR_UP || tile === TILE_TYPES.STAIR_DOWN;
-	const prevStairHint = !!G.stairHintActive;
-	G.stairHintActive = onStairs;
-
-	if (prevStairHint !== G.stairHintActive) {
-		updateMissionText();
-	}
-
-	// Reset armed flag when player leaves stair tile
-	if (!onStairs) {
-		G.stairTransitionArmed = true;
-		G.stairTransitionRequested = false;
-		return false;
-	}
-
 	if (!G.stairTransitionRequested) return false;
 
-	if (G.stairTransitionCooldownMs > 0) {
+	const targetTile = G.stairTransitionTargetTile;
+	if (targetTile !== TILE_TYPES.STAIR_UP && targetTile !== TILE_TYPES.STAIR_DOWN) {
 		G.stairTransitionRequested = false;
 		return false;
 	}
 
-	if (!G.stairTransitionArmed) {
+	if (G.stairTransitionCooldownMs > 0) {
 		G.stairTransitionRequested = false;
 		return false;
 	}
@@ -431,7 +418,7 @@ function checkStairTransition() {
 		return false;
 	}
 
-	const direction = tile === TILE_TYPES.STAIR_UP ? 1 : -1;
+	const direction = targetTile === TILE_TYPES.STAIR_UP ? 1 : -1;
 	const nextFloor = G.floor + direction;
 
 	if (nextFloor < 1 || nextFloor > G.floorCount) {
@@ -461,6 +448,7 @@ function checkStairTransition() {
 	G.stairTransitionCooldownMs = STAIR_TRANSITION_COOLDOWN_MS;
 	G.stairTransitionArmed = false;
 	G.stairTransitionRequested = false;
+	G.stairTransitionTargetTile = null;
 
 	closeCtx();
 	updateVisibility();
@@ -617,9 +605,5 @@ function isPlayerHiddenFrom(observer) {
 	const tileY = G.P.y | 0;
 	const tile = G.tiles[tileY]?.[tileX];
 
-	if (tile !== TILE_TYPES.HIDE_SPOT) {
-		return false;
-	}
-
-	return dst(observer, G.P) > 1.3;
+	return tile === TILE_TYPES.HIDE_SPOT;
 }

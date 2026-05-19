@@ -191,14 +191,26 @@ export function hideMainHackLoading() {
 	G.dom.nbLoadingBarFill.style.boxShadow = '';
 }
 
+function _asciiBar(val, max, len, fillChar, emptyChar) {
+	const pct = Math.max(0, Math.min(1, val / Math.max(1, max)));
+	const filled = Math.round(pct * len);
+	return '[' + fillChar.repeat(filled) + emptyChar.repeat(len - filled) + ']';
+}
+
 export function refreshHUD() {
 	if (!G.P) {
 		return;
 	}
 
-	G.dom.hpBar.style.width = `${(G.P.hp / G.P.mhp) * 100}%`;
-	G.dom.bwBar.style.width = `${(G.P.bw / G.P.mbw) * 100}%`;
-	G.dom.alertBar.style.width = `${G.alert}%`;
+	if (G.dom.hpBar)    G.dom.hpBar.textContent    = _asciiBar(G.P.hp,   G.P.mhp, 10, '█', '░');
+	if (G.dom.bwBar)    G.dom.bwBar.textContent    = _asciiBar(G.P.bw,   G.P.mbw, 10, '█', '░');
+	if (G.dom.alertBar) G.dom.alertBar.textContent = _asciiBar(G.alert,  100,      10, '█', '░');
+
+	// ASCII bar colors
+	if (G.dom.hpBar)    G.dom.hpBar.style.color    = '#00ff9f';
+	if (G.dom.bwBar)    G.dom.bwBar.style.color    = '#ffd700';
+	if (G.dom.alertBar) G.dom.alertBar.style.color = G.alert > 60 ? '#ff3a5c' : G.alert > 25 ? '#ff9a3c' : '#4a8';
+
 	G.dom.credits.textContent = `¥${G.P.cr}`;
 	refreshQuickHackStock();
 
@@ -226,7 +238,7 @@ export function refreshHUD() {
 		}
 	}
 
-	// Show code in HUD if found
+	// Show code if found
 	const codeEl = document.getElementById('hud-code');
 	if (codeEl) {
 		if (G.codeFound && G.code) {
@@ -255,9 +267,11 @@ export function rebuildList() {
 		}
 
 		const hacked = terminal.used || G.sideHacked.includes(terminal.id || `sterm${index}`);
+		const tid = terminal.id || `sterm_${index + 1}`;
 
 		rows.push({
 			desc: `Terminal S-${index + 1}`,
+			id: tid,
 			st: terminal.used ? 'USED' : hacked ? 'HACKED' : 'ONLINE',
 			d: Math.hypot(terminal.x - G.P.x, terminal.y - G.P.y).toFixed(1),
 		});
@@ -268,11 +282,12 @@ export function rebuildList() {
 	if (!G.mainHacked && mainTerminalKnown) {
 		rows.push({
 			desc: 'Terminal GŁÓWNY',
+			id: G.mainTerminal.id || 'main_terminal',
 			st: G.hackingMain ? 'HAKOWANIE...' : 'ONLINE',
 			d: Math.hypot(G.mainTerminal.x - G.P.x, G.mainTerminal.y - G.P.y).toFixed(1),
 		});
 	} else if (mainTerminalKnown) {
-		rows.push({ desc: 'Terminal GŁÓWNY', st: '✓ HACKED', d: '—' });
+		rows.push({ desc: 'Terminal GŁÓWNY', id: G.mainTerminal.id || 'main_terminal', st: '✓ HACKED', d: '—' });
 	}
 
 	for (const device of G.devices) {
@@ -304,6 +319,7 @@ export function rebuildList() {
 
 		rows.push({
 			desc: device.desc,
+			id: device.id || '—',
 			st: state,
 			d: Math.hypot(device.x - G.P.x, device.y - G.P.y).toFixed(1),
 		});
@@ -312,7 +328,7 @@ export function rebuildList() {
 	G.dom.targetList.innerHTML = rows
 		.map(
 			(row) =>
-				`<div class="tgt"><div class="tn">${row.desc}</div><div class="ts">${row.st} | ${row.d}t</div></div>`,
+				`<div class="tgt"><div class="tn">${row.desc}</div><div class="tid">${row.id}</div><div class="ts">${row.st} | ${row.d}t</div></div>`,
 		)
 		.join('');
 
@@ -373,7 +389,7 @@ export function syncZoneLabel() {
 }
 
 export function getCanvasTopOffset() {
-	return HUD_HEIGHT;
+	return 0;
 }
 
 export function refreshMusicToggle() {

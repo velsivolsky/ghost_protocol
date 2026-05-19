@@ -241,11 +241,7 @@ function isPlayerHiddenFromGuard(guard) {
   const tileY = G.P.y | 0;
   const tile = G.tiles[tileY]?.[tileX];
 
-  if (tile !== TILE_TYPES.HIDE_SPOT) {
-    return false;
-  }
-
-  return dst(guard, G.P) > 1.3;
+  return tile === TILE_TYPES.HIDE_SPOT;
 }
 
 function moveWithPath(guard, targetX, targetY, speed) {
