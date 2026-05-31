@@ -144,6 +144,10 @@ let colTexU = null;
 let colSide = null;
 let colFace = null;
 
+// Per-frame canvas height used by V-crop helper
+let _frameH = 0;
+let _frameHalfH = 0;
+
 // ─── Flat map cache (rebuilt lazily when G.tiles reference changes) ───────────
 let tileFlat = null;         // Int8Array — row-major flat copy of G.tiles
 let tileFlat_mapW = 0;
@@ -400,6 +404,8 @@ export function renderFrame(G) {
   const W     = G.canvas.width;
   const H     = G.canvas.height;
   const halfH = H >> 1;
+  _frameH = H;
+  _frameHalfH = halfH;
   const webgl3D = !!(G.webglEnabled && G.gl && G.glCanvas);
 
   ctx.clearRect(0, 0, W, H);
@@ -660,6 +666,30 @@ export function renderFrame(G) {
     }
   }
 
+  // ── Smooth colTexU: linearly interpolate U within each wallRayStep block ────
+  // Without this, every column in a block shares the same wallX value, producing
+  // N-pixel-wide horizontal bands that look like texture stretching.
+  // Wolf3D casts one ray per column; here we reconstruct that by lerping between
+  // the anchor sample of this block and the next.
+  if (wallRayStep > 1) {
+    for (let _bs = 0; _bs < W; _bs += wallRayStep) {
+      const _be = Math.min(W - 1, _bs + wallRayStep);
+      if (_be <= _bs) continue;
+      if (colHitTile[_bs] < 0 || colHitTile[_be] < 0) continue;
+      if (colMapX[_bs] !== colMapX[_be] || colMapY[_bs] !== colMapY[_be]) continue;
+      const _u0 = colTexU[_bs];
+      const _u1 = colTexU[_be];
+      // Skip lerp if the two anchor U values straddle the 0/1 texture wrap boundary.
+      // Without this guard, lerping from e.g. 0.98 → 0.02 runs backwards through
+      // the entire texture width and causes the visible "tear" at tile edges.
+      if (Math.abs(_u1 - _u0) > 0.5) continue;
+      const _sp = _be - _bs;
+      for (let _c = _bs + 1; _c < _be; _c++) {
+        colTexU[_c] = _u0 + (_u1 - _u0) * ((_c - _bs) / _sp);
+      }
+    }
+  }
+
   if (webgl3D && renderRaycastWebGL(G, {
     width: W,
     height: H,
@@ -803,6 +833,24 @@ function _ensurePreparedWallAtlas(G) {
   return true;
 }
 
+function _wallVCrop(col, texH, vBase) {
+  const base = vBase || 0;
+  const dist = Math.max(0.08, colPerpDist[col]);
+  const fullLineH = Math.min(_frameH * 4, (_frameH / dist) | 0);
+  if (fullLineH < 1) {
+    return { srcY: base, srcH: texH, dstY: colDrawStart[col], dstH: Math.max(1, colDrawEnd[col] - colDrawStart[col] + 1) };
+  }
+  const fds = _frameHalfH - (fullLineH >> 1);
+  const v0 = Math.max(0, (colDrawStart[col] - fds) / fullLineH);
+  const v1 = Math.min(1, (colDrawEnd[col] + 1 - fds) / fullLineH);
+  return {
+    srcY: base + Math.max(0, (v0 * texH) | 0),
+    srcH: Math.max(1, Math.ceil((v1 - v0) * texH)),
+    dstY: colDrawStart[col],
+    dstH: Math.max(1, colDrawEnd[col] - colDrawStart[col] + 1),
+  };
+}
+
 function _drawWallAtlasColumns(G, ctx, W, atlasReady) {
   if (!atlasReady) return;
   if (!_ensurePreparedWallAtlas(G)) return;
@@ -837,17 +885,18 @@ function _drawWallAtlasColumns(G, ctx, W, atlasReady) {
     const tileX = variant % WALL_ATLAS_COLS;
     const tileY = (variant / WALL_ATLAS_COLS) | 0;
     const sampleX = Math.max(0, Math.min(tileW - 1, (colTexU[col] * tileW) | 0));
+    const vcW = _wallVCrop(col, tileH, tileY * tileH);
 
     ctx.drawImage(
       atlas,
       tileX * tileW + sampleX,
-      tileY * tileH,
+      vcW.srcY,
       1,
-      tileH,
+      vcW.srcH,
       col,
-      colDrawStart[col],
+      vcW.dstY,
       1,
-      rowH + 1,
+      vcW.dstH,
     );
 
     const sideShade = colSide[col] === 1 ? 0.2 : 0;
@@ -855,7 +904,7 @@ function _drawWallAtlasColumns(G, ctx, W, atlasReady) {
     const shade = Math.min(0.72, sideShade + fogShade);
     if (shade > 0.01) {
       ctx.fillStyle = SHADE_STRINGS[Math.min(72, (shade * 100 + 0.5) | 0)];
-      ctx.fillRect(col, colDrawStart[col], 1, rowH + 1);
+      ctx.fillRect(col, vcW.dstY, 1, vcW.dstH);
     }
   }
 }
@@ -903,9 +952,10 @@ function _drawElevatorSheetColumns(G, ctx, W) {
     const u = 1 - Math.max(0, Math.min(0.9995, colTexU[col]));
     const sampleX = frameX + Math.max(0, Math.min(frameW - 1, (u * frameW) | 0));
 
+    const vcE = _wallVCrop(col, frameH, 0);
     ctx.save();
     ctx.globalAlpha = Math.max(0.25, Math.min(1, fogF));
-    ctx.drawImage(img, sampleX, 0, 1, frameH, col, colDrawStart[col], 1, rowH + 1);
+    ctx.drawImage(img, sampleX, vcE.srcY, 1, vcE.srcH, col, vcE.dstY, 1, vcE.dstH);
 
     const sideShade = colSide[col] === 1 ? 0.2 : 0;
     const fogShade = Math.max(0, 1 - fogF) * 0.72;
@@ -913,7 +963,7 @@ function _drawElevatorSheetColumns(G, ctx, W) {
     if (shade > 0.01) {
       ctx.globalAlpha = 1;
       ctx.fillStyle = SHADE_STRINGS[Math.min(72, (shade * 100 + 0.5) | 0)];
-      ctx.fillRect(col, colDrawStart[col], 1, rowH + 1);
+      ctx.fillRect(col, vcE.dstY, 1, vcE.dstH);
     }
     ctx.restore();
   }
@@ -939,24 +989,6 @@ function _drawDoorSheetColumns(G, ctx, W) {
     }
   }
 
-  // Build on-screen spans for each visible door tile (min/max columns),
-  // so we can preserve texture aspect by cropping UVs instead of stretching.
-  const doorSpans = new Map();
-  for (let i = 0; i < W; i += 1) {
-    const tile = colHitTile[i];
-    if (tile !== TILE_TYPES.DOOR_CLOSED && tile !== TILE_TYPES.DOOR_LOCKED) continue;
-    const mapX = colMapX[i] | 0;
-    const mapY = colMapY[i] | 0;
-    const key = `${mapY},${mapX}`;
-    const existing = doorSpans.get(key);
-    if (!existing) {
-      doorSpans.set(key, { minCol: i, maxCol: i });
-    } else {
-      if (i < existing.minCol) existing.minCol = i;
-      if (i > existing.maxCol) existing.maxCol = i;
-    }
-  }
-
   for (let col = 0; col < W; col += 1) {
     const tile = colHitTile[col];
     if (tile !== TILE_TYPES.DOOR_CLOSED && tile !== TILE_TYPES.DOOR_LOCKED) continue;
@@ -973,28 +1005,13 @@ function _drawDoorSheetColumns(G, ctx, W) {
     const unlocked = doorUnlockedAt.get(`${mapY},${mapX}`) || false;
     const frameOffsetY = unlocked ? frameH : 0;
 
-    let u = Math.max(0, Math.min(0.9995, colTexU[col]));
-
-    const span = doorSpans.get(`${mapY},${mapX}`);
-    if (span) {
-      const spanW = Math.max(1, span.maxCol - span.minCol + 1);
-      const sourceAspect = frameW / Math.max(1, frameH);
-      const destAspect = spanW / Math.max(1, rowH);
-
-      // If the projected door is wider than the source aspect, crop UV horizontally
-      // to keep door details proportionate instead of stretching left/right.
-      if (destAspect > sourceAspect) {
-        const visibleUSpan = Math.max(0.08, Math.min(1, sourceAspect / destAspect));
-        const inset = (1 - visibleUSpan) * 0.5;
-        u = inset + u * visibleUSpan;
-      }
-    }
-
+    const u = Math.max(0, Math.min(0.9995, colTexU[col]));
     const sampleX = Math.max(0, Math.min(frameW - 1, (u * frameW) | 0));
+    const vcD = _wallVCrop(col, frameH, frameOffsetY);
 
     ctx.save();
     ctx.globalAlpha = Math.max(0.25, Math.min(1, fogF));
-    ctx.drawImage(img, sampleX, frameOffsetY, 1, frameH, col, colDrawStart[col], 1, rowH + 1);
+    ctx.drawImage(img, sampleX, vcD.srcY, 1, vcD.srcH, col, vcD.dstY, 1, vcD.dstH);
 
     const sideShade = colSide[col] === 1 ? 0.2 : 0;
     const fogShade = Math.max(0, 1 - fogF) * 0.72;
@@ -1002,7 +1019,7 @@ function _drawDoorSheetColumns(G, ctx, W) {
     if (shade > 0.01) {
       ctx.globalAlpha = 1;
       ctx.fillStyle = SHADE_STRINGS[Math.min(72, (shade * 100 + 0.5) | 0)];
-      ctx.fillRect(col, colDrawStart[col], 1, rowH + 1);
+      ctx.fillRect(col, vcD.dstY, 1, vcD.dstH);
     }
     ctx.restore();
   }
@@ -1053,12 +1070,23 @@ function _drawNeonSheetColumns(G, ctx, W, neonWallMap) {
     const sy = ((frame / NEON_PANEL_SPRITE_COLS) | 0) * cellH;
     const sampleX = sx + Math.max(0, Math.min(cellW - 1, (u * cellW) | 0));
 
-    const panelH = Math.max(12, (rowH * 0.75) | 0);
-    const panelY = colDrawStart[col] + ((rowH - panelH) >> 1);
+    const _nDist  = Math.max(0.08, colPerpDist[col]);
+    const _nFullH = Math.min(_frameH * 4, (_frameH / _nDist) | 0);
+    const _nFds   = _frameHalfH - (_nFullH >> 1);
+    const _nPSS   = _nFds + 0.125 * _nFullH;
+    const _nPSE   = _nFds + 0.875 * _nFullH;
+    const _nVisS  = Math.max(0, _nPSS);
+    const _nVisE  = Math.min(_frameH - 1, _nPSE);
+    if (_nVisE <= _nVisS) continue;
+    const _nPSH   = Math.max(1, _nPSE - _nPSS);
+    const _nSrcY  = sy + Math.max(0, ((_nVisS - _nPSS) / _nPSH * cellH) | 0);
+    const _nSrcH  = Math.max(1, Math.ceil(((_nVisE - _nVisS) / _nPSH) * cellH));
+    const _nDstY  = _nVisS | 0;
+    const _nDstH  = Math.max(1, (_nVisE - _nVisS) | 0);
 
     ctx.save();
     ctx.globalAlpha = Math.min(1, fogF * 1.22);
-    ctx.drawImage(img, sampleX, sy, 1, cellH, col, panelY, 1, panelH);
+    ctx.drawImage(img, sampleX, _nSrcY, 1, _nSrcH, col, _nDstY, 1, _nDstH);
 
     const sideShade = colSide[col] === 1 ? 0.2 : 0;
     const fogShade = Math.max(0, 1 - fogF) * 0.72;
@@ -1066,7 +1094,7 @@ function _drawNeonSheetColumns(G, ctx, W, neonWallMap) {
     if (shade > 0.01) {
       ctx.globalAlpha = 1;
       ctx.fillStyle = SHADE_STRINGS[Math.min(72, (shade * 100 + 0.5) | 0)];
-      ctx.fillRect(col, panelY, 1, panelH);
+      ctx.fillRect(col, _nDstY, 1, _nDstH);
     }
     ctx.restore();
   }
@@ -1112,18 +1140,19 @@ function _drawTerminalSheetColumns(G, ctx, W, panelMap) {
     const u = 1 - Math.max(0, Math.min(0.9995, colTexU[col]));
     const sampleX = rect.sx + Math.max(0, Math.min(rect.sw - 1, (u * rect.sw) | 0));
 
+    const vcT = _wallVCrop(col, rect.sh, rect.sy);
     ctx.save();
     ctx.globalAlpha = Math.max(0.25, Math.min(1, fogF));
     ctx.drawImage(
       img,
       sampleX,
-      rect.sy,
+      vcT.srcY,
       1,
-      rect.sh,
+      vcT.srcH,
       col,
-      colDrawStart[col],
+      vcT.dstY,
       1,
-      rowH + 1,
+      vcT.dstH,
     );
 
     const sideShade = colSide[col] === 1 ? 0.2 : 0;
@@ -1132,7 +1161,7 @@ function _drawTerminalSheetColumns(G, ctx, W, panelMap) {
     if (shade > 0.01) {
       ctx.globalAlpha = 1;
       ctx.fillStyle = SHADE_STRINGS[Math.min(72, (shade * 100 + 0.5) | 0)];
-      ctx.fillRect(col, colDrawStart[col], 1, rowH + 1);
+      ctx.fillRect(col, vcT.dstY, 1, vcT.dstH);
     }
     ctx.restore();
   }
@@ -1822,10 +1851,22 @@ function _drawLightingOverlay(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, p
 function _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, planeX, planeY) {
   if (!G.devices) return;
 
-  const isVisionBlocker = (x, y) => {
-    const tile = G.tiles?.[y]?.[x];
-    return tile === TILE_TYPES.WALL || tile === TILE_TYPES.DOOR_CLOSED || tile === TILE_TYPES.DOOR_LOCKED || tile === TILE_TYPES.WALL_TERMINAL;
-  };
+  const NEAR = 0.15; // near-clip plane in camera space
+
+  // Build a floor-visibility clipping region so cones never bleed through walls.
+  // For each screen column the floor is only visible from colDrawEnd[col] down to H.
+  // We trace the bottom edge of all wall columns as a polygon.
+  ctx.save();
+  ctx.beginPath();
+  if (colDrawEnd && colDrawEnd.length >= W) {
+    ctx.moveTo(0, colDrawEnd[0]);
+    for (let _c = 1; _c < W; _c++) ctx.lineTo(_c, colDrawEnd[_c]);
+    ctx.lineTo(W, colDrawEnd[W - 1]);
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.clip();
+  }
 
   for (const cam of G.devices) {
     if (cam.type !== 'cam') continue;
@@ -1840,62 +1881,88 @@ function _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, pl
 
     if (camDist > 18) continue;
 
-    const key = (cam.x | 0) + ',' + (cam.y | 0);
-    const known = (G.visible && G.visible.has(key)) || (G.seenDevices && G.seenDevices.has(cam.id));
-    if (!known && camDist > 6) continue;
+    // Camera must be visible to player (no wall between player and camera)
+    const playerToCamDist = _raycastWallDistanceToPoint(G.tiles, px, py, cx, cy, camDist + 0.5);
+    if (playerToCamDist < camDist - 0.3) continue;
 
-    // Never render camera cones through walls: camera itself must be visible from player now.
-    const cameraVisibleNow = lineOfSight(px, py, cx, cy, isVisionBlocker);
-    if (!cameraVisibleNow) continue;
-
-    // Build cone polygon: origin + arc points
+    // ── Build world-space cone polygon ──────────────────────────────────────
+    // origin (camera centre) + arc steps, each ray clipped by walls
     const steps = 40;
-    const points = [{ x: cx, y: cy }];
+    const worldPts = [{ x: cx, y: cy }];
     for (let i = 0; i <= steps; i++) {
       const a = facing - fovHalf + (i / steps) * fovHalf * 2;
-      points.push({ x: cx + Math.cos(a) * range, y: cy + Math.sin(a) * range });
+      // Clip 1: camera-side DDA – cone doesn't go through walls
+      const d = Math.min(range, _raycastWallDistance(G.tiles, cx, cy, a, range));
+      const wx = cx + Math.cos(a) * d;
+      const wy = cy + Math.sin(a) * d;
+      // Note: no player-side occlusion clipping – walls naturally occlude the
+      // floor cone via perspective projection in the raycaster. Replacing arc
+      // points with player-to-wall intersections distorts the polygon shape.
+      worldPts.push({ x: wx, y: wy });
     }
 
-    const screenPts = points.map((p) =>
-      p ? worldToFloorScreen(p.x, p.y, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH) : null
-    );
+    // ── Convert to camera (view) space: tX = horizontal, tY = depth ─────────
+    const camPts = worldPts.map(({ x, y }) => {
+      const dx = x - px;
+      const dy = y - py;
+      return {
+        tX: invDet * ( dirY * dx - dirX * dy),
+        tY: invDet * (-planeY * dx + planeX * dy),
+      };
+    });
 
-    if (!screenPts[0]) continue;
+    // ── Sutherland-Hodgman near-plane clip (keep tY >= NEAR) ─────────────────
+    // This prevents polygon vertices from jumping to null as the player moves
+    // near/past the cone – the root cause of the "cone moves with player" bug.
+    const clipped = [];
+    for (let i = 0; i < camPts.length; i++) {
+      const a = camPts[i];
+      const b = camPts[(i + 1) % camPts.length];
+      const aIn = a.tY >= NEAR;
+      const bIn = b.tY >= NEAR;
+      if (aIn) clipped.push(a);
+      if (aIn !== bIn) {
+        const t = (NEAR - a.tY) / (b.tY - a.tY);
+        clipped.push({ tX: a.tX + t * (b.tX - a.tX), tY: NEAR });
+      }
+    }
+
+    if (clipped.length < 3) continue;
+
+    // ── Project to screen ────────────────────────────────────────────────────
+    const screenPts = clipped.map(({ tX, tY }) => ({
+      x: (W / 2) * (1 + tX / tY),
+      y: Math.max(halfH, Math.min(H, halfH + halfH / tY)),
+    }));
 
     let coneColour;
-    if (cam.hacked || cam.offline)          coneColour = 'rgba(40,40,80,0.12)';
-    else if (cam.triggered || cam.alerting) coneColour = 'rgba(220,30,20,0.22)';
-    else                                    coneColour = 'rgba(0,80,220,0.18)';
+    if (cam.hacked || cam.offline)          coneColour = 'rgba(40,40,80,0.10)';
+    else if (cam.triggered || cam.alerting) coneColour = 'rgba(220,60,60,0.30)';
+    else                                    coneColour = 'rgba(200,80,80,0.18)';
 
-    const origin = screenPts[0];
     ctx.save();
+
     ctx.fillStyle = coneColour;
     ctx.beginPath();
-    ctx.moveTo(origin.x, origin.y);
+    ctx.moveTo(screenPts[0].x, screenPts[0].y);
     for (let i = 1; i < screenPts.length; i++) {
-      const sp = screenPts[i];
-      if (!sp) continue;
-      ctx.lineTo(sp.x, Math.max(halfH, Math.min(H, sp.y)));
+      ctx.lineTo(screenPts[i].x, screenPts[i].y);
     }
     ctx.closePath();
     ctx.fill();
 
-    // Cone edge dashed lines
-    const edgeCol = coneColour.replace('0.18','0.45').replace('0.22','0.55').replace('0.12','0.28');
-    ctx.strokeStyle = edgeCol;
+    const edgeAlpha = (cam.hacked || cam.offline) ? '0.20' : (cam.triggered || cam.alerting) ? '0.55' : '0.38';
+    ctx.strokeStyle = `rgba(220,80,80,${edgeAlpha})`;
     ctx.lineWidth   = 1;
     ctx.setLineDash([3, 4]);
-    [1, screenPts.length - 1].forEach((idx) => {
-      const sp = screenPts[idx];
-      if (!sp) return;
-      ctx.beginPath();
-      ctx.moveTo(origin.x, origin.y);
-      ctx.lineTo(sp.x, Math.max(halfH, Math.min(H, sp.y)));
-      ctx.stroke();
-    });
+    ctx.stroke();
     ctx.setLineDash([]);
+
     ctx.restore();
   }
+
+  // Restore the floor-visibility clip context
+  ctx.restore();
 }
 
 // ─── Wall texture overlays ────────────────────────────────────────────────────

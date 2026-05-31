@@ -810,7 +810,7 @@ function buildEntryNodesFile(host, runState, rng) {
     `HOST=${host}`,
     'SIDE_TERMINAL_FLOW=connect node_side_# -> breach firewall -> dump creds',
     'MAIN_FLOW=connect node_main -> scp breach.sh -> source breach.sh',
-    'ELEVATOR_FLOW=connect node_main -> elevator unlock',
+    'ELEVATOR_FLOW=elevator up / elevator down (always available, no main node required)',
     `RELAY_RECOVERY_WINDOW_SEC=${runState.reliabilityWindowSec}`,
     `WATCHDOG_DELAY_MS=${runState.counterHackDelayMs}`,
     `NOTE=${toSingleLine(supportLine.text)}`,

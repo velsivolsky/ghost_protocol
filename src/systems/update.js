@@ -523,12 +523,6 @@ function checkStairTransition() {
 		return false;
 	}
 
-	if (!G.elevatorUnlocked) {
-		G.stairTransitionRequested = false;
-		log('Winda zablokowana. Odblokuj: connect node_main -> unlock elevator', 'w');
-		return false;
-	}
-
 	const direction = targetTile === TILE_TYPES.STAIR_UP ? 1 : -1;
 	const nextFloor = G.floor + direction;
 

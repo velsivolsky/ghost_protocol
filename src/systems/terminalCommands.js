@@ -222,7 +222,7 @@ export const COMMAND_REGISTRY = [
     requiredContext: 'connected',
     noise: 8,
     latencyMs: 360,
-    help: 'elevator unlock - authorize floor transitions from node_main',
+    help: 'elevator unlock - check elevator status (elevators are always accessible)',
   },
   {
     id: 'open',

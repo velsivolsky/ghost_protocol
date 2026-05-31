@@ -20,7 +20,7 @@ export function updateMissionText() {
     ? ` | META: <span style="color:#7ac8ff">${meta.title.replace('META: ', '')} ${meta.progress}/${meta.target}</span>`
     : '';
   const stairHint = G.stairHintActive
-    ? ` | <span style="color:${G.elevatorUnlocked ? '#7ac8ff' : '#ff9a3c'}">WINDA: ${G.elevatorUnlocked ? 'kliknij kafelek, aby przejsc' : 'zablokowana - odblokuj w terminalu'}</span>`
+    ? ` | <span style="color:#7ac8ff">WINDA: kliknij kafelek, aby przejsc</span>`
     : '';
 
   if (G.missionPhase === 0) {
@@ -108,11 +108,11 @@ function getTutorialMissionText() {
   }
 
   if (step === 18) {
-    return 'TUTORIAL | Main node success: <b>connect node_main</b> -> <b>elevator unlock</b>';
+    return 'TUTORIAL | Main node hack: <b>connect node_main</b> -> <b>scp breach.sh</b> -> <b>source breach.sh</b>';
   }
 
   if (step === 19) {
-    return 'TUTORIAL | Uzyj windy: <b>elevator up</b> lub <b>elevator down</b>';
+    return 'TUTORIAL | Winda jest zawsze dostepna: <b>elevator up</b> lub <b>elevator down</b>';
   }
 
   return 'TUTORIAL | Komplet. Wejdz w normalny run i uzywaj skrotow live terminala';

@@ -230,10 +230,6 @@ export function handleCanvasClick(event) {
   const playerOnStairs = playerTile === TILE_TYPES.STAIR_UP || playerTile === TILE_TYPES.STAIR_DOWN;
 
   if (playerOnStairs) {
-    if (!G.elevatorUnlocked) {
-      log('Winda zablokowana. Odblokuj: connect node_main -> unlock elevator', 'w');
-      return;
-    }
     G.stairTransitionRequested = true;
     return;
   }

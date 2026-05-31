@@ -1287,7 +1287,7 @@ function runDumpCreds(target) {
   if (progress.required > 0 && progress.recovered >= progress.required) {
     G.mainTerminalAuth.unlocked = true;
     pushTerminalLine('MAIN AUTH KEY reconstructed. main terminal unlocked.', 'ok');
-    pushTerminalLine('next: connect node_main -> unlock elevator', 'dim');
+    pushTerminalLine('next: approach elevator tile -> elevator up / elevator down', 'dim');
   }
 
   return true;
@@ -1511,11 +1511,6 @@ function runElevatorUnlock(target) {
 }
 
 function runElevatorMove(direction) {
-  if (!G.elevatorUnlocked) {
-    pushTerminalLine('elevator locked. run elevator unlock on node_main first.', 'warn');
-    return;
-  }
-
   const desired = direction === 'up' ? TILE_TYPES.STAIR_UP : TILE_TYPES.STAIR_DOWN;
   const nearby = findNearbyStair(desired, 1.5);
   if (!nearby) {
@@ -1678,20 +1673,8 @@ function runUnlock(args, target) {
   }
 
   if (target.type === 'mainterm' && String(args[0] || '').toLowerCase() === 'elevator') {
-    if (!isMainTerminalAccessUnlocked()) {
-      const progress = getMainAuthProgress();
-      pushTerminalLine(`main auth incomplete [${progress.recovered}/${progress.required}]`, 'warn');
-      pushTerminalLine('collect shards: breach firewall + dump creds on side terminals', 'dim');
-      return;
-    }
-
-    if (G.elevatorUnlocked) {
-      pushTerminalLine('elevator uplink already unlocked.', 'dim');
-      return;
-    }
-
-    G.elevatorUnlocked = true;
-    pushTerminalLine('elevator uplink unlocked for floor transitions.', 'ok');
+    pushTerminalLine('elevator access is open by default. no unlock required.', 'dim');
+    pushTerminalLine('use: elevator up | elevator down (must be within 1.5t of elevator tile)', 'dim');
     return;
   }
 
@@ -2512,8 +2495,7 @@ function pushConnectedHelp(target) {
 
   if (target.type === 'mainterm') {
     pushTerminalLine('scp breach.sh     : upload main payload', 'dim');
-    pushTerminalLine('source breach.sh  : start breach channel', 'dim');
-    pushTerminalLine('elevator unlock   : authorize floor transitions', 'dim');
+    pushTerminalLine('source breach.sh  : execute breach (mission objective)', 'dim');
     return;
   }
 
@@ -2551,7 +2533,7 @@ function pushConnectedCommandHint(target) {
   }
 
   if (target.type === 'mainterm') {
-    pushTerminalLine('main uplink ready. commands: scp breach.sh -> source breach.sh -> elevator unlock', 'dim');
+    pushTerminalLine('main uplink ready. commands: scp breach.sh -> source breach.sh', 'dim');
     return;
   }
 

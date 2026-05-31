@@ -189,10 +189,7 @@ function getTutorialRecoveryHint(commandId, args, step) {
 	}
 
 	if (step === 18) {
-		if (connectedId !== 'node_main') {
-			return 'Wróć na node_main i wykonaj elevator unlock.';
-		}
-		return 'Main node ma być już odblokowany przez shard z node_side_1.';
+		return 'Wroc na node_main i wykonaj pelny hack: scp breach.sh -> source breach.sh.';
 	}
 
 	if (step === 19) {
@@ -208,7 +205,7 @@ function getTutorialRecoveryHint(commandId, args, step) {
 	}
 
 	if (commandId === 'elevator_up' || commandId === 'elevator_down') {
-		return 'Winda będzie na samym końcu tutoriala, po odblokowaniu main node.';
+		return 'Winda jest dostepna po zakonczeniu hacku na node_main (step 18).';
 	}
 
 	if (commandId === 'breach_firewall' || commandId === 'dump_creds') {
@@ -228,7 +225,7 @@ function getTutorialRecoveryHint(commandId, args, step) {
 	}
 
 	if (commandId === 'unlock' && arg0 === 'elevator') {
-		return 'Winda odblokuje się dopiero po auth shardzie z node_side_1.';
+		return 'Elevator unlock nie jest wymagany. Winda jest zawsze dostepna. Idz do windy i uzyj elevator up/down.';
 	}
 
 	return '';
@@ -362,8 +359,7 @@ export function tickTutorial(force = false) {
 			advanced = advanceTutorialStep(18);
 		}
 	} else if (step === 18) {
-		const requestedElevator = cmd === 'elevator_unlock' || (cmd === 'unlock' && String(args[0] || '').toLowerCase() === 'elevator');
-		if (requestedElevator && connectedType === 'mainterm' && connectedId === 'node_main' && G.elevatorUnlocked) {
+		if (G.mainHacked) {
 			advanced = advanceTutorialStep(19);
 		}
 	} else if (step === 19) {
@@ -564,7 +560,7 @@ function getTutorialStepContent(step) {
 	if (step === 14) {
 		return {
 			title: 'MAIN NODE // CONTROLLED FAIL',
-			body: 'Polacz z node_main i sproboj akcji bez creds (np. inject relay albo unlock elevator).',
+			body: 'Polacz z node_main i sproboj akcji bez creds (np. inject relay albo scp breach.sh bez sharda).',
 			hint: 'To ma byc kontrolowana porazka edukacyjna przed zdobyciem shardu.',
 			log: 'Tutorial: fail-case na main node zaliczony.',
 		};
@@ -599,18 +595,18 @@ function getTutorialStepContent(step) {
 
 	if (step === 18) {
 		return {
-			title: 'MAIN NODE // SUCCESS PATH',
-			body: 'Wroc na node_main i odblokuj winde: elevator unlock lub unlock elevator.',
-			hint: 'To finalny dowod, ze creds zostaly poprawnie pozyskane.',
-			log: 'Tutorial: main node success-path zaliczony.',
+			title: 'MAIN NODE // HACK',
+			body: 'Wroc na node_main i wykonaj pelny hack: connect node_main -> scp breach.sh -> source breach.sh.',
+			hint: 'To jest finalny cel runa. Auth shard z node_side_1 juz jest w systemie.',
+			log: 'Tutorial: main node zhakowany.',
 		};
 	}
 
 	if (step === 19) {
 		return {
 			title: 'ELEVATOR EXECUTION',
-			body: 'Podejdz do windy i wykonaj elevator up albo elevator down.',
-			hint: 'To zamyka pelny flow: skan -> kontrola -> creds -> main node -> transit.',
+			body: 'Podejdz do windy i wykonaj elevator up albo elevator down. Winda jest zawsze dostepna.',
+			hint: 'Winda nie wymaga main node. Mozesz przemieszczac sie miedzy pietrami w dowolnym momencie.',
 			log: 'Tutorial: winda zaliczona.',
 		};
 	}

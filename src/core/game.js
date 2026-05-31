@@ -1598,7 +1598,7 @@ function startTutorialRun() {
     unlocked: false,
     passphrasePreview: null,
   };
-  G.elevatorUnlocked = false;
+  G.elevatorUnlocked = true;
   G.floor = 1;
   G.floorCount = 1;
   resetAudio();
@@ -1799,7 +1799,7 @@ export function startRun(wave, credits) {
     unlocked: requiredShards === 0,
     passphrasePreview: null,
   };
-  G.elevatorUnlocked = requiredShards === 0;
+  G.elevatorUnlocked = true;
   G.floor = 1;
   G.floorCount = floorCount;
   resetAudio();
