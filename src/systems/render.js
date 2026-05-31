@@ -38,8 +38,6 @@ import {
   NEON_PANEL_SPRITE_OFFLINE,
   SAFE_VENT_SPRITE_COLS,
   SAFE_VENT_SPRITE_ROWS,
-  TECHNIC_SPRITE_COLS,
-  TECHNIC_SPRITE_ROWS,
   TILE_TYPES,
   VENT_SPRITE_COLS,
   VENT_SPRITE_OFFLINE,
@@ -84,6 +82,10 @@ WALL_BASE_R[13] = 70;  WALL_BASE_G[13] = 45;  WALL_BASE_B[13] = 0;  // CODE_TERM
 const SHADE_STRINGS = new Array(73);
 for (let _si = 0; _si <= 72; _si++) SHADE_STRINGS[_si] = `rgba(0,0,0,${(_si / 100).toFixed(2)})`;
 const GUARD_DIR_ORDER = ['S', 'SE', 'E', 'NE', 'N', 'NW', 'W', 'SW'];
+const TECH_DIR_ORDER = ['S', 'SE', 'E', 'NE', 'N', 'NW', 'W', 'SW'];
+const TECH_ANIM_ROWS = { idle: 0, walk: 8, alert: 16, death: 17 };
+const TECH_ANIM_FRAMES = { idle: 4, walk: 6, alert: 4, death: 6 };
+const TECH_FRAME_SIZE = 128;
 const FACE_N = 0;
 const FACE_E = 1;
 const FACE_S = 2;
@@ -325,6 +327,16 @@ function _raycastWallDistance(tiles, x, y, angle, maxRange) {
   }
 
   return maxRange;
+}
+
+function _raycastWallDistanceToPoint(tiles, x, y, tx, ty, maxRange) {
+  const dx = tx - x;
+  const dy = ty - y;
+  const dist = Math.hypot(dx, dy);
+  if (dist <= 0.05) return 0.05;
+
+  const angle = Math.atan2(dy, dx);
+  return Math.min(maxRange, _raycastWallDistance(tiles, x, y, angle, maxRange));
 }
 
 // ─── Lamp-based lighting ──────────────────────────────────────────────────────
@@ -1709,8 +1721,14 @@ function _drawLightingOverlay(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, p
 function _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, planeX, planeY) {
   if (!G.devices) return;
 
+  const isVisionBlocker = (x, y) => {
+    const tile = G.tiles?.[y]?.[x];
+    return tile === TILE_TYPES.WALL || tile === TILE_TYPES.DOOR_CLOSED || tile === TILE_TYPES.DOOR_LOCKED || tile === TILE_TYPES.WALL_TERMINAL;
+  };
+
   for (const cam of G.devices) {
     if (cam.type !== 'cam') continue;
+    if (!cam.showCone) continue;
 
     const cx      = (cam.x || 0) + 0.5;
     const cy      = (cam.y || 0) + 0.5;
@@ -1721,21 +1739,24 @@ function _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, pl
 
     if (camDist > 18) continue;
 
-    const key   = (cam.x | 0) + ',' + (cam.y | 0);
+    const key = (cam.x | 0) + ',' + (cam.y | 0);
     const known = (G.visible && G.visible.has(key)) || (G.seenDevices && G.seenDevices.has(cam.id));
     if (!known && camDist > 6) continue;
 
+    // Never render camera cones through walls: camera itself must be visible from player now.
+    const cameraVisibleNow = lineOfSight(px, py, cx, cy, isVisionBlocker);
+    if (!cameraVisibleNow) continue;
+
     // Build cone polygon: origin + arc points
-    const steps  = 10;
+    const steps = 40;
     const points = [{ x: cx, y: cy }];
     for (let i = 0; i <= steps; i++) {
       const a = facing - fovHalf + (i / steps) * fovHalf * 2;
-      const clippedRange = G.tiles ? _raycastWallDistance(G.tiles, cx, cy, a, range) : range;
-      points.push({ x: cx + Math.cos(a) * clippedRange, y: cy + Math.sin(a) * clippedRange });
+      points.push({ x: cx + Math.cos(a) * range, y: cy + Math.sin(a) * range });
     }
 
     const screenPts = points.map((p) =>
-      worldToFloorScreen(p.x, p.y, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH)
+      p ? worldToFloorScreen(p.x, p.y, px, py, invDet, dirX, dirY, planeX, planeY, W, halfH) : null
     );
 
     if (!screenPts[0]) continue;
@@ -1745,9 +1766,10 @@ function _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, pl
     else if (cam.triggered || cam.alerting) coneColour = 'rgba(220,30,20,0.22)';
     else                                    coneColour = 'rgba(0,80,220,0.18)';
 
-    ctx.save();
-    ctx.beginPath();
     const origin = screenPts[0];
+    ctx.save();
+    ctx.fillStyle = coneColour;
+    ctx.beginPath();
     ctx.moveTo(origin.x, origin.y);
     for (let i = 1; i < screenPts.length; i++) {
       const sp = screenPts[i];
@@ -1755,7 +1777,6 @@ function _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, pl
       ctx.lineTo(sp.x, Math.max(halfH, Math.min(H, sp.y)));
     }
     ctx.closePath();
-    ctx.fillStyle = coneColour;
     ctx.fill();
 
     // Cone edge dashed lines
@@ -1763,7 +1784,8 @@ function _drawCameraFOVCones(G, ctx, W, H, halfH, px, py, invDet, dirX, dirY, pl
     ctx.strokeStyle = edgeCol;
     ctx.lineWidth   = 1;
     ctx.setLineDash([3, 4]);
-    [screenPts[1], screenPts[screenPts.length - 1]].forEach((sp) => {
+    [1, screenPts.length - 1].forEach((idx) => {
+      const sp = screenPts[idx];
       if (!sp) return;
       ctx.beginPath();
       ctx.moveTo(origin.x, origin.y);
@@ -2171,7 +2193,7 @@ function _drawSprites(G, ctx, W, H, halfH, px, py, dirX, dirY, planeX, planeY, i
 
     if (sp.kind === 'dev') {
       if (!_drawGuardSpriteSheet(G, ctx, sp.dev, drawSX, drawEX, drawSY, drawEY, fogF, transformY, W, px, py)
-          && !_drawTechnicianSpriteSheet(G, ctx, sp.dev, drawSX, drawEX, drawSY, drawEY, fogF, transformY, W)) {
+          && !_drawTechnicianSpriteSheet(G, ctx, sp.dev, drawSX, drawEX, drawSY, drawEY, fogF, transformY, W, px, py)) {
         _drawDevSprite(ctx, sp.dev, screenX, drawSX, drawEX, drawSY, drawEY, sw, sh, fogF, transformY, W);
       }
     } else {
@@ -2274,7 +2296,46 @@ function _drawGuardSpriteSheet(G, ctx, dev, drawSX, drawEX, drawSY, drawEY, fogF
   return true;
 }
 
-function _drawTechnicianSpriteSheet(G, ctx, dev, drawSX, drawEX, drawSY, drawEY, fogF, transformY, W) {
+function _getTechnicianSpriteState(tech) {
+  if (tech.dead || tech.state === 'dead') return 'death';
+  if (tech.state === 'repair' || tech.state === 'repairing' || tech.state === 'inspect' || tech.state === 'investigate') return 'alert';
+  if (tech.state === 'patrol' || tech.state === 'return') return 'walk';
+  return 'idle';
+}
+
+function _getTechnicianSpriteRow(tech, playerX, playerY) {
+  const state = _getTechnicianSpriteState(tech);
+  if (state === 'alert' || state === 'death') {
+    return TECH_ANIM_ROWS[state];
+  }
+
+  const dx = playerX - tech.x;
+  const dy = playerY - tech.y;
+  const angleToPlayer = Math.atan2(dy, dx);
+  let rel = (angleToPlayer - (Number.isFinite(tech.angle) ? tech.angle : 0)) % (Math.PI * 2);
+  if (rel < 0) rel += Math.PI * 2;
+  const dirIdx = Math.round(rel / (Math.PI / 4)) % TECH_DIR_ORDER.length;
+  return TECH_ANIM_ROWS[state] + dirIdx;
+}
+
+function _getTechnicianSpriteClip(tech, playerX, playerY) {
+  const state = _getTechnicianSpriteState(tech);
+  const row = _getTechnicianSpriteRow(tech, playerX, playerY);
+  const frames = TECH_ANIM_FRAMES[state] ?? 4;
+  const rawFrame = Math.floor(Number(tech.animTimer || 0));
+  const frame = state === 'death'
+    ? Math.max(0, Math.min(frames - 1, rawFrame))
+    : ((rawFrame % frames) + frames) % frames;
+
+  return {
+    sx: frame * TECH_FRAME_SIZE,
+    sy: row * TECH_FRAME_SIZE,
+    sw: TECH_FRAME_SIZE,
+    sh: TECH_FRAME_SIZE,
+  };
+}
+
+function _drawTechnicianSpriteSheet(G, ctx, dev, drawSX, drawEX, drawSY, drawEY, fogF, transformY, W, px, py) {
   if (!dev || dev.type !== 'tech') return false;
   if (!(G.technicSpriteLoaded && G.technicSpriteImage && !G.technicSpriteError)) return false;
 
@@ -2283,17 +2344,10 @@ function _drawTechnicianSpriteSheet(G, ctx, dev, drawSX, drawEX, drawSY, drawEY,
   const imgH = img.naturalHeight || img.height || 0;
   if (imgW <= 0 || imgH <= 0) return false;
 
-  const cols = Math.max(1, TECHNIC_SPRITE_COLS | 0);
-  const rows = Math.max(1, TECHNIC_SPRITE_ROWS | 0);
-  const frameW = Math.max(1, (imgW / cols) | 0);
-  const frameH = Math.max(1, (imgH / rows) | 0);
-
-  const idNum = Number(String(dev.id || '').replace(/\D/g, '')) || 0;
-  const isBusy = dev.state === 'repair' || dev.state === 'repairing' || dev.state === 'inspect';
-  const speed = isBusy ? 190 : 130;
-  const frame = cols > 1 ? ((((performance.now() / speed) | 0) + idNum) % cols) : 0;
-  const frameX = frame * frameW;
-  const frameY = 0;
+  const clip = _getTechnicianSpriteClip(dev, px, py);
+  const frameW = clip.sw;
+  const frameH = clip.sh;
+  if (clip.sx + frameW > imgW || clip.sy + frameH > imgH) return false;
 
   const destW = Math.max(1, drawEX - drawSX + 1);
   const destH = Math.max(1, drawEY - drawSY + 1);
@@ -2312,8 +2366,18 @@ function _drawTechnicianSpriteSheet(G, ctx, dev, drawSX, drawEX, drawSY, drawEY,
     if (c < 0 || c >= W) continue;
     if (zBuffer[c] <= transformY + 0.08) continue;
     const u = (c - bodySX) / bodyW;
-    const srcX = frameX + Math.min(frameW - 1, Math.max(0, (u * frameW) | 0));
-    ctx.drawImage(img, srcX, frameY, 1, frameH, c, dstY, 1, destH);
+    const texX = Math.min(frameW - 1, Math.max(0, (u * frameW) | 0));
+    ctx.drawImage(
+      img,
+      clip.sx + texX,
+      clip.sy,
+      1,
+      clip.sh,
+      c,
+      dstY,
+      1,
+      destH,
+    );
   }
 
   ctx.imageSmoothingEnabled = prevSmooth;

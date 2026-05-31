@@ -10,7 +10,7 @@ import { createCamera } from '../entities/camera.js';
 import { createDistraction, tickDistraction } from '../entities/distraction.js';
 import { tickDrone, createDrone } from '../entities/drone.js';
 import { createGuard, tickGuard } from '../entities/guard.js';
-import { createTechnician, tickTechnician } from '../entities/technician.js';
+import { createTechnician, tickTechnician, updateTechAnim } from '../entities/technician.js';
 import { updateMissionText, win } from './mission.js';
 import { hideMainHackLoading, log, rebuildList, refreshHUD, syncZoneLabel } from './ui.js';
 import { clamp, dst } from '../utils/math.js';
@@ -198,6 +198,7 @@ export function update(dt) {
 	for (const technician of byType('tech')) {
 		if (!technician.dead) {
 			tickTechnician(technician, simDt);
+			updateTechAnim(technician, simDt);
 		}
 	}
 

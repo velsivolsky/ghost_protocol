@@ -284,7 +284,7 @@ function announceTerminalOverlayFlow(targetType, target) {
 
 function getTerminalFlowHint(targetType, id, target) {
   if (targetType === 'cam') {
-    return `connect ${id} -> feed blind | feed loop`;
+    return `connect ${id} -> feed blind | feed loop | feed show cone`;
   }
 
   if (targetType === 'guard' || targetType === 'drone' || targetType === 'tech') {
@@ -300,6 +300,10 @@ function getTerminalFlowHint(targetType, id, target) {
   }
 
   if (targetType === 'mainterm') {
+    addCtxBtn('◉ show cone (BW:3)', bw >= 3 && camInRange && !target.showCone, () => {
+      revealCamCone(target);
+      showCtx(screenX, screenY, target, 'cam');
+    });
     if (!G.mainTerminalAuth?.unlocked) {
       return 'connect node_side_# -> breach firewall -> dump creds';
     }
@@ -361,6 +365,24 @@ function loopCam(camera) {
       log('Feed wznowiony', 'w');
     }
   }, 10000);
+}
+
+function revealCamCone(camera) {
+  if (G.P.bw < 3) {
+    return;
+  }
+
+  if (camera.showCone) {
+    return;
+  }
+
+  camera.showCone = true;
+  G.P.bw -= 3;
+  playHackSfx();
+  raiseCameraInteractionAlert(1);
+  log(`Cone kamery ${camera.id} ujawniony`, 'ok');
+  floatMsg('CONE', camera, '#00d7ff');
+  rebuildList();
 }
 
 export function overloadGuard(guard) {

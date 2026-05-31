@@ -5,6 +5,7 @@ export function createCamera(index, room) {
     x: room.x + ((room.w / 2) | 0),
     y: room.y,
     hacked: false,
+    showCone: false,
     facing: Math.PI / 2,
     rotDir: (Math.random() > 0.5 ? 1 : -1) * 0.0012,
     fov: Math.PI / 2.5,

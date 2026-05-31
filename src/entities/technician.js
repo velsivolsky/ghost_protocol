@@ -7,6 +7,18 @@ import { findNextStep } from '../world/pathing.js';
 import { canWalk } from '../world/map.js';
 
 const TECHNICIAN_SPEED = 1.2;
+const TECH_ANIM_FPS = {
+	idle: 4,
+	walk: 8,
+	alert: 6,
+	death: 4,
+};
+const TECH_ANIM_FRAMES = {
+	idle: 4,
+	walk: 6,
+	alert: 4,
+	death: 6,
+};
 
 export function createTechnician(index, room) {
 	return {
@@ -30,10 +42,59 @@ export function createTechnician(index, room) {
 		dead: false,
 		desc: `Technik #${index + 1}`,
 		hackable: false,
-		frame: 0, // Aktualna klatka animacji
-		direction: 'S', // Kierunek (S, SE, E, NE, N, NW, W, SW)
-		state: 'IDLE', // Stan (IDLE, WALK, ALERT, DEATH)
+		angle: 0,
+		animFrame: 0,
+		animTimer: 0,
 	};
+}
+
+export function updateTechAnim(technician, dt) {
+	if (!technician) {
+		return;
+	}
+
+	const prevX = Number.isFinite(technician._animPrevX) ? technician._animPrevX : technician.x;
+	const prevY = Number.isFinite(technician._animPrevY) ? technician._animPrevY : technician.y;
+	const movedDist = Math.hypot((technician.x || 0) - prevX, (technician.y || 0) - prevY);
+
+	technician._animPrevX = technician.x;
+	technician._animPrevY = technician.y;
+
+	const animState = getTechAnimState(technician, movedDist);
+	const fps = TECH_ANIM_FPS[animState] ?? 4;
+	const frames = TECH_ANIM_FRAMES[animState] ?? 4;
+
+	technician.animTimer = Math.max(0, Number(technician.animTimer || 0));
+	technician.animTimer += (fps * Math.max(0, dt || 0)) / 1000;
+
+	if (animState === 'death') {
+		technician.animTimer = Math.min(technician.animTimer, frames - 1);
+	} else {
+		technician.animTimer %= frames;
+	}
+
+	technician.animFrame = Math.max(0, Math.min(frames - 1, Math.floor(technician.animTimer)));
+}
+
+function getTechAnimState(technician, movedDist) {
+	if (technician.dead || technician.state === 'dead') {
+		return 'death';
+	}
+
+	if (
+		technician.state === 'repair' ||
+		technician.state === 'repairing' ||
+		technician.state === 'inspect' ||
+		technician.state === 'investigate'
+	) {
+		return 'alert';
+	}
+
+	if (movedDist > 0.0015 || technician.state === 'patrol' || technician.state === 'return') {
+		return 'walk';
+	}
+
+	return 'idle';
 }
 
 export function tickTechnician(technician, dt) {
@@ -198,6 +259,9 @@ function moveToward(technician, targetX, targetY, dt, speedFactor) {
 	const dx = stepTargetX - technician.x;
 	const dy = stepTargetY - technician.y;
 	const length = Math.hypot(dx, dy) || 1;
+	if (length > 1e-4) {
+		technician.angle = Math.atan2(dy, dx);
+	}
 	const step = (TECHNICIAN_SPEED * speedFactor * dt) / 1000;
 	const moveStep = Math.min(step, length);
 	const moveX = (dx / length) * moveStep;

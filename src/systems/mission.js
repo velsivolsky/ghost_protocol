@@ -1,8 +1,7 @@
 import { TILE_TYPES } from '../core/constants.js';
 import { G, byType } from '../core/state.js';
 import { log } from './ui.js';
-import { maybeGrantContactFromMainTerminal, resolveRunFailure, resolveRunSuccess } from './recruitment.js';
-import { maybeGrantDataFragment, saveDataFragments } from './dataFragments.js';
+import { resolveRunFailure, resolveRunSuccess } from './recruitment.js';
 import { getRunIntelSummary } from './runIntel.js';
 
 export function updateMissionText() {
@@ -126,14 +125,10 @@ export function completeMainHack() {
   G.missionPhase = 2;
   G.tiles[G.mainTerminal.y][G.mainTerminal.x] = TILE_TYPES.FLOOR;
 
-  const contact = maybeGrantContactFromMainTerminal(G.wave);
-  const grantedFragment = maybeGrantDataFragment(G.wave);
-  G.mainHackContactReward = contact;
-  G.mainHackFragmentReward = grantedFragment;
-
-  if (grantedFragment) {
-    saveDataFragments();
-  }
+  // Rewards are already applied by handleDisconnectExfil (networkBreach.js).
+  // G.mainHackContactReward and G.mainHackFragmentReward reflect only what was actually exfilled.
+  const contact = G.mainHackContactReward;
+  const grantedFragment = G.mainHackFragmentReward;
 
   if (contact) {
     log(`>>> ZDOBYTO DANE KONTAKT: ${contact.alias} [${contact.tier.toUpperCase()}]`, 'ok');

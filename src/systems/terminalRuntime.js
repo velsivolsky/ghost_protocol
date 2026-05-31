@@ -11,12 +11,17 @@ import { noteTutorialCommand, noteTutorialScan } from './tutorial.js';
 import { grantQuickHack } from './quickhacks.js';
 import {
   handleAbortBreach,
-  handleCrackIce,
-  handleInjectBypass,
-  launchNetworkBreach,
-  handleProbeLock,
+  handleBruteAuth,
   handleUploadCreds,
-  handleUploadPayload,
+  handleUseBreachAction,
+  handleCoreFinisher,
+  handleFilesystemLs,
+  handleFilesystemCd,
+  handleFilesystemCat,
+  handleFilesystemScp,
+  handleFilesystemTransferFunds,
+  handleDisconnectExfil,
+  launchNetworkBreach,
 } from './networkBreach.js';
 import { applyAudioMixSettings, getAudioMixSettings } from './audio.js';
 
@@ -40,6 +45,7 @@ const COMMAND_HEAT_COSTS = {
   source: 16,
   feed_blind: 9,
   feed_loop: 5,
+  feed_show_cone: 3,
   breach: 16,
   deploy: 14,
   override: 16,
@@ -73,6 +79,16 @@ const COMMAND_HEAT_COSTS = {
   upload_creds: 12,
   upload_payload: 10,
   abort_breach: 0,
+  // New breach commands
+  brute_auth: 18,
+  use_breach: 8,
+  ba: 8,
+  core: 18,
+  fs_ls: 0,
+  fs_cd: 0,
+  fs_cat: 1,
+  fs_scp: 6,
+  transfer_funds: 5,
   game_options: 0,
   options_save: 0,
   options_cancel: 0,
@@ -90,6 +106,7 @@ const COMMAND_BW_COSTS = {
   source: 8,
   feed_blind: 7,
   feed_loop: 4,
+  feed_show_cone: 3,
   unlock: 3,
   elevator_unlock: 3,
   trigger_vent: 3,
@@ -110,6 +127,16 @@ const COMMAND_BW_COSTS = {
   upload_creds: 10,
   upload_payload: 10,
   abort_breach: 0,
+  // New breach commands
+  brute_auth: 10,
+  use_breach: 0,
+  ba: 0,
+  core: 18,
+  fs_ls: 0,
+  fs_cd: 0,
+  fs_cat: 1,
+  fs_scp: 2,
+  transfer_funds: 3,
   ddos: 10,
   game_options: 0,
   options_save: 0,
@@ -654,6 +681,14 @@ function resolveCommandExecution(pending) {
   }
 
   if (commandId === 'disconnect') {
+    // If vault is open after ICE defeat, route to exfil disconnect
+    if (
+      G.terminalRuntime.commandContext === 'main_breach' &&
+      G.mainBreachState?.iceDefeated
+    ) {
+      handleDisconnectExfil(pushTerminalLine);
+      return;
+    }
     runDisconnect();
     noteTutorialCommand('disconnect', args);
     return;
@@ -701,17 +736,18 @@ function resolveCommandExecution(pending) {
   }
 
   if (commandId === 'crack_ice') {
-    handleCrackIce(pushTerminalLine);
+    // Legacy — removed. Silently ignored.
+    pushTerminalLine('Komenda usunięta. Uzyj: upload creds | brute auth', 'warn');
     return;
   }
 
   if (commandId === 'probe_lock') {
-    handleProbeLock(pushTerminalLine);
+    pushTerminalLine('Komenda usunięta. Uzyj: upload creds | brute auth', 'warn');
     return;
   }
 
   if (commandId === 'inject_bypass') {
-    handleInjectBypass(pushTerminalLine);
+    handleBruteAuth(pushTerminalLine);
     return;
   }
 
@@ -721,7 +757,72 @@ function resolveCommandExecution(pending) {
   }
 
   if (commandId === 'upload_payload') {
-    handleUploadPayload(args[0], pushTerminalLine);
+    pushTerminalLine('Komenda usunięta. Uzyj: use <action> | ba <1-4>', 'warn');
+    return;
+  }
+
+  if (commandId === 'brute_auth') {
+    handleBruteAuth(pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'use_breach') {
+    handleUseBreachAction(args[0], pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'ba') {
+    const slotNum = parseInt(args[0], 10) - 1;
+    if (isNaN(slotNum) || slotNum < 0 || slotNum > 3) {
+      pushTerminalLine('ba: podaj slot 1-4', 'warn');
+      return;
+    }
+    const actionId = G.breachActionLoadout?.[slotNum];
+    if (!actionId) { pushTerminalLine(`ba: slot ${slotNum + 1} pusty`, 'warn'); return; }
+    handleUseBreachAction(actionId, pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'core') {
+    handleCoreFinisher(pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'fs_ls') {
+    handleFilesystemLs(args, pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'fs_cd') {
+    handleFilesystemCd(args, pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'fs_cat') {
+    handleFilesystemCat(args, pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'fs_scp') {
+    handleFilesystemScp(args, pushTerminalLine);
+    return;
+  }
+
+  if (commandId === 'scp') {
+    // When in main_breach context with vault open, route to filesystem scp
+    if (
+      G.terminalRuntime.commandContext === 'main_breach' &&
+      G.mainBreachState?.iceDefeated
+    ) {
+      handleFilesystemScp(args, pushTerminalLine);
+      return;
+    }
+    runScp(args, target);
+    return;
+  }
+
+  if (commandId === 'transfer_funds') {
+    handleFilesystemTransferFunds(pushTerminalLine);
     return;
   }
 
@@ -743,11 +844,6 @@ function resolveCommandExecution(pending) {
     return;
   }
 
-  if (commandId === 'scp') {
-    runScp(args, target);
-    return;
-  }
-
   if (commandId === 'source') {
     runSource(args, target);
     return;
@@ -760,6 +856,11 @@ function resolveCommandExecution(pending) {
 
   if (commandId === 'feed_loop') {
     runFeedLoop(target);
+    return;
+  }
+
+  if (commandId === 'feed_show_cone') {
+    runFeedShowCone(target);
     return;
   }
 
@@ -1345,6 +1446,17 @@ function runFeedLoop(target) {
     rebuildList();
   });
   pushTerminalLine(`camera ${target.id} feed loop active (10s)`, 'ok');
+  rebuildList();
+}
+
+function runFeedShowCone(target) {
+  if (!target || target.type !== 'cam') {
+    pushTerminalLine('feed show cone requires connected camera uplink', 'warn');
+    return;
+  }
+
+  target.ref.showCone = true;
+  pushTerminalLine(`camera ${target.id} cone revealed`, 'ok');
   rebuildList();
 }
 
