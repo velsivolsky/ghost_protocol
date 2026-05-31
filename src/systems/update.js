@@ -20,7 +20,7 @@ import { lineOfSight } from '../utils/los.js';
 import { closeCtx } from './hacking.js';
 import { getTimeScale, startQuickHackWindow, tickQuickHackWindow } from './quickhacks.js';
 import { launchNetworkBreach, tickNetworkBreach } from './networkBreach.js';
-import { resolveRunFailure } from './recruitment.js';
+import { resolveRunFailure, getActiveOperatorBuffs } from './recruitment.js';
 import { tickTraceSystem } from './traceSystem.js';
 import { isTerminalOverlayOpen, noteMainHackChannelProgress, tickTerminalRuntime } from './terminalRuntime.js';
 import { tickTutorial, updateTutorialPanel } from './tutorial.js';
@@ -125,6 +125,21 @@ export function update(dt) {
 		if (G.boT <= 0) {
 			G.blackout = false;
 		}
+
+		// Fail-open: locked doors open automatically during blackout (power cut)
+		if (G.doors) {
+			const px = G.P.x | 0;
+			const py = G.P.y | 0;
+			for (const door of G.doors) {
+				if (!door.unlocked && Math.abs(door.x - px) + Math.abs(door.y - py) <= 2) {
+					door.unlocked = true;
+					if (G.tiles[door.y]?.[door.x] === TILE_TYPES.DOOR_CLOSED) {
+						G.tiles[door.y][door.x] = TILE_TYPES.FLOOR;
+					}
+					log('Blackout: awaryjne odblokowanie drzwi.', 'w');
+				}
+			}
+		}
 	}
 
 	const tileX = G.P.x | 0;
@@ -185,6 +200,7 @@ export function update(dt) {
 
 			if (!wasChasing && guard.state === 'chase') {
 				startQuickHackWindow(guard.id);
+				G.lastPlayerAlert = { x: G.P.x, y: G.P.y, t: performance.now() };
 			}
 		}
 	}
@@ -215,6 +231,26 @@ export function update(dt) {
 
 	if (G.alert > 0 && G.tick % 90 === 0) {
 		G.alert = Math.max(0, G.alert - 0.4);
+	}
+
+	// Operator panic risk: every ~60s at alert > 70 the operator may abort
+	if (G.tick % 3600 === 0 && G.alert > 70 && G.hub?.activeOperatorId) {
+		const buffs = getActiveOperatorBuffs();
+		if (Math.random() < buffs.panicRisk) {
+			log('OPERATOR: Ekipa panikuje. Przerywam wsparcie.', 'danger');
+			G.hub.activeOperatorId = null;
+		}
+	}
+
+	// Dead Drop: collect when player steps near the tile
+	if (G.deadDropTile && !G.deadDropCollected && G.P) {
+		const ddDist = Math.hypot(G.P.x - G.deadDropTile.x - 0.5, G.P.y - G.deadDropTile.y - 0.5);
+		if (ddDist < 1.2) {
+			G.deadDropCollected = true;
+			const reward = 200 + (G.wave || 1) * 50;
+			G.P.cr += reward;
+			log(`DEAD DROP odebrano. +\u00a5${reward}`, 'ok');
+		}
 	}
 
 	refreshHUD();
@@ -356,17 +392,91 @@ function updatePlayerMovement(dt) {
 }
 
 function canOccupy(tiles, x, y) {
-	const left = x + 0.14;
-	const right = x + 0.86;
-	const top = y + 0.12;
-	const bottom = y + 0.86;
+	const left = x + 0.18;
+	const right = x + 0.82;
+	const top = y + 0.16;
+	const bottom = y + 0.84;
 
-	return (
+	const canStand = (
 		canWalk(tiles, left, top) &&
 		canWalk(tiles, right, top) &&
 		canWalk(tiles, left, bottom) &&
 		canWalk(tiles, right, bottom)
 	);
+
+	if (!canStand) {
+		return false;
+	}
+
+	// Slight wall standoff so movement does not scrape directly along wall faces.
+	if (collidesWithWallBuffer(tiles, left, right, top, bottom)) {
+		return false;
+	}
+
+	// Extra collision envelope only for closed/locked doors.
+	// Open doors remain fully passable via canWalk(TILE_TYPES.DOOR_OPEN).
+	if (collidesWithClosedDoor(tiles, left, right, top, bottom)) {
+		return false;
+	}
+
+	return true;
+}
+
+function collidesWithWallBuffer(tiles, left, right, top, bottom) {
+	const wallBuffer = 0.06;
+	const minX = Math.max(0, (left | 0) - 1);
+	const maxX = Math.min((tiles[0]?.length || 1) - 1, (right | 0) + 1);
+	const minY = Math.max(0, (top | 0) - 1);
+	const maxY = Math.min((tiles.length || 1) - 1, (bottom | 0) + 1);
+
+	for (let ty = minY; ty <= maxY; ty += 1) {
+		for (let tx = minX; tx <= maxX; tx += 1) {
+			const tile = tiles[ty]?.[tx];
+			if (tile !== TILE_TYPES.WALL && tile !== TILE_TYPES.WALL_TERMINAL) {
+				continue;
+			}
+
+			const exLeft = tx - wallBuffer;
+			const exRight = tx + 1 + wallBuffer;
+			const exTop = ty - wallBuffer;
+			const exBottom = ty + 1 + wallBuffer;
+
+			if (right > exLeft && left < exRight && bottom > exTop && top < exBottom) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+function collidesWithClosedDoor(tiles, left, right, top, bottom) {
+	const doorBuffer = 0.5;
+	const doorInset = 0;
+	const minX = Math.max(0, (left | 0) - 1);
+	const maxX = Math.min((tiles[0]?.length || 1) - 1, (right | 0) + 1);
+	const minY = Math.max(0, (top | 0) - 1);
+	const maxY = Math.min((tiles.length || 1) - 1, (bottom | 0) + 1);
+
+	for (let ty = minY; ty <= maxY; ty += 1) {
+		for (let tx = minX; tx <= maxX; tx += 1) {
+			const tile = tiles[ty]?.[tx];
+			if (tile !== TILE_TYPES.DOOR_CLOSED && tile !== TILE_TYPES.DOOR_LOCKED) {
+				continue;
+			}
+
+			const exLeft = tx + doorInset - doorBuffer;
+			const exRight = tx + 1 - doorInset + doorBuffer;
+			const exTop = ty + doorInset - doorBuffer;
+			const exBottom = ty + 1 - doorInset + doorBuffer;
+
+			if (right > exLeft && left < exRight && bottom > exTop && top < exBottom) {
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 function checkExfiltration() {

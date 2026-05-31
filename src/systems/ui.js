@@ -1,5 +1,5 @@
 import { HUD_HEIGHT, TILE } from '../core/constants.js';
-import { G, upgradeHack } from '../core/state.js';
+import { G, byType, upgradeHack } from '../core/state.js';
 import { toggleMusicEnabled } from './audio.js';
 import {
 	ensureHubState,
@@ -121,6 +121,7 @@ export function bindUI() {
 		hubRecruit: document.getElementById('hub-recruit'),
 		hubRunMeta: document.getElementById('hub-run-meta'),
 		hubRuns: document.getElementById('hub-runs'),
+		hubRunHistory: document.getElementById('hub-run-history'),
 		hubCrew: document.getElementById('hub-crew'),
 		hubContacts: document.getElementById('hub-contacts'),
 		terminalOverlay: document.getElementById('rt-overlay'),
@@ -424,6 +425,13 @@ function updateMusicButtonState(button, iconEl, icon, label, enabled) {
 	button.classList.toggle('active', enabled);
 }
 
+function _getMaxGuardTimer(field) {
+	if (!G.devices) return 0;
+	return G.devices
+		.filter((d) => d.type === 'guard' && !d.dead)
+		.reduce((max, g) => Math.max(max, g[field] || 0), 0);
+}
+
 function refreshQuickHackStock() {
 	if (!G.dom.quickHackStock || !G.quickHacks) {
 		return;
@@ -438,7 +446,18 @@ function refreshQuickHackStock() {
 		return;
 	}
 
-	const labels = equipped.map((id) => `${id.slice(0, 3).toUpperCase()}:${G.quickHacks[id] || 0}`);
+	const opticsT = _getMaxGuardTimer('opticsOfflineT');
+	const motoricsT = _getMaxGuardTimer('motoricsResetT');
+
+	const labels = equipped.map((id) => {
+		const count = G.quickHacks[id] || 0;
+		const abbr = id.slice(0, 3).toUpperCase();
+		let timer = '';
+		if (id === 'optics' && opticsT > 0) timer = `[${Math.ceil(opticsT / 1000)}s]`;
+		if (id === 'motorics' && motoricsT > 0) timer = `[${Math.ceil(motoricsT / 1000)}s]`;
+		if ((id === 'ghostmesh' || id === 'lagspike') && motoricsT > 0) timer = `[${Math.ceil(motoricsT / 1000)}s]`;
+		return `${abbr}:${count}${timer}`;
+	});
 	G.dom.quickHackStock.textContent = labels.join(' ');
 }
 
@@ -512,6 +531,7 @@ function renderHub() {
 
 	renderRunBoard();
 	renderRecruitmentBoard();
+	renderRunHistory();
 }
 
 function renderRunBoard() {
@@ -601,6 +621,27 @@ function renderRecruitmentBoard() {
 			`;
 		}).join(''),
 	].join('');
+}
+
+function renderRunHistory() {
+	if (!G.dom.hubRunHistory) {
+		return;
+	}
+	const history = G.hub?.runHistory;
+	if (!Array.isArray(history) || !history.length) {
+		G.dom.hubRunHistory.innerHTML = '';
+		return;
+	}
+	const last5 = history.slice(-5).reverse();
+	const rows = last5.map((entry) => {
+		const d = new Date(entry.date);
+		const dateStr = `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+		return `<div class="hub-run-card" style="opacity:0.75;font-size:0.82em;">
+			<div class="hub-run-top"><span>${entry.runType} W${entry.wave}</span><span>${dateStr}</span></div>
+			<div class="hub-run-bot">¥${entry.credits} | ALERT:${entry.alert}% | TRACE:${entry.trace} | TERM:${entry.sideHacked}</div>
+		</div>`;
+	}).join('');
+	G.dom.hubRunHistory.innerHTML = `<div class="hub-subhead" style="margin-top:12px;">// HISTORIA RUNÓW</div>${rows}`;
 }
 
 export function switchHubTab(tab) {

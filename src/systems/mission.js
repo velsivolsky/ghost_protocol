@@ -166,6 +166,22 @@ export function win() {
 
   const bonus = 150 + G.wave * 80 + ((100 - G.alert) | 0);
   G.P.cr += bonus;
+
+  // Run Journal: record this run
+  if (G.hub) {
+    if (!Array.isArray(G.hub.runHistory)) G.hub.runHistory = [];
+    const runMeta0 = G.hub?.activeRunMeta;
+    G.hub.runHistory.push({
+      date: Date.now(),
+      wave: G.wave,
+      runType: runMeta0?.typeName || 'BRAK',
+      credits: bonus,
+      alert: Math.ceil(G.alert),
+      trace: Math.ceil(G.traceRuntime?.value || 0),
+      sideHacked: G.sideHacked?.length || 0,
+    });
+    if (G.hub.runHistory.length > 20) G.hub.runHistory = G.hub.runHistory.slice(-20);
+  }
   const rewardContact = G.mainHackContactReward;
   const grantedFragment = G.mainHackFragmentReward;
   const runMeta = G.hub?.activeRunMeta;

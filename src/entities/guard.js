@@ -74,6 +74,21 @@ export function tickGuard(guard, dt) {
   guard.opticsOfflineT = Math.max(0, (guard.opticsOfflineT || 0) - dt);
   guard.motoricsResetT = Math.max(0, (guard.motoricsResetT || 0) - dt);
 
+  // Alert propagation: if another guard spotted the player recently, pull idle/patrol guards to investigate
+  if (
+    G.lastPlayerAlert &&
+    (guard.state === 'idle' || guard.state === 'patrol') &&
+    performance.now() - G.lastPlayerAlert.t < 8000
+  ) {
+    const adx = G.lastPlayerAlert.x - guard.x;
+    const ady = G.lastPlayerAlert.y - guard.y;
+    if (Math.hypot(adx, ady) < 12) {
+      guard.state = 'search';
+      guard.lastSeen = { x: G.lastPlayerAlert.x, y: G.lastPlayerAlert.y };
+      guard.searchTimer = 0;
+    }
+  }
+
   if (guard.opticsOfflineT > 0 && guard.state === 'chase') {
     guard.state = 'search';
     guard.detect = 0;

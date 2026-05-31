@@ -1,6 +1,8 @@
 import { G } from '../core/state.js';
 import { TRACE_BALANCE, TRACE_TIERS } from '../core/balance.js';
 import { clamp } from '../utils/math.js';
+import { getActiveOperatorBuffs } from './recruitment.js';
+import { getParanoiaPressure } from './dataFragments.js';
 
 export function addTrace(amount, source = 'unknown') {
   if (!G.traceRuntime) {
@@ -58,13 +60,31 @@ export function tickTraceSystem(dt) {
     addTrace((dt / 1000) * passivePerSec * heatPressure, 'link');
   }
 
+  // Paranoia pressure: high-paranoiaLevel fragments passively add trace every tick
+  const paranoiaPressure = getParanoiaPressure();
+  if (paranoiaPressure > 0) {
+    addTrace((dt / 1000) * paranoiaPressure, 'paranoia');
+  }
+
   if (heat >= 60) {
     addTrace((dt / 1000) * ((heat - 58) * 0.08) * heatPressure, 'heat');
   }
 
   const decayBase = (dt / 1000) * G.traceRuntime.decayPerSec;
   const decayHeatPenalty = heat >= 70 ? Math.min(0.65, (heat - 65) * 0.01) : 0;
-  const decay = maskActive ? decayBase * TRACE_BALANCE.maskDecayMult : decayBase * (1 - decayHeatPenalty);
+
+  // Alert pressure: trace decays slower when alert is high (AI keeps momentum)
+  const alert = G.alert || 0;
+  const alertPenalty = alert > TRACE_BALANCE.alertDecayPenaltyStart
+    ? (alert - TRACE_BALANCE.alertDecayPenaltyStart) * TRACE_BALANCE.alertDecayPenaltyPerPoint
+    : 0;
+  // peakTier >= 3: system has seen the player at high trace — decay permanently slower this run
+  const peakTierMult = (G.traceRuntime.peakTier || 0) >= 3 ? TRACE_BALANCE.peakTierDecayMult : 1;
+
+  let decayMult = maskActive ? TRACE_BALANCE.maskDecayMult : (1 - decayHeatPenalty - alertPenalty);
+  const operatorBuffs = getActiveOperatorBuffs();
+  decayMult = Math.max(0.05, decayMult) * peakTierMult * operatorBuffs.traceDecayMult;
+  const decay = decayBase * decayMult;
   softenTrace(decay);
 
   G.traceRuntime.velocity *= heat >= 70 ? 0.965 : 0.92;
@@ -76,6 +96,10 @@ export function tickTraceSystem(dt) {
     if (value >= TRACE_TIERS[i]) {
       tier = i + 1;
     }
+  }
+
+  if (tier > (G.traceRuntime.peakTier || 0)) {
+    G.traceRuntime.peakTier = tier;
   }
 
   if (tier > (G.traceRuntime.tier || 0)) {

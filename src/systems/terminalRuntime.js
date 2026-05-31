@@ -51,6 +51,8 @@ const COMMAND_HEAT_COSTS = {
   override: 16,
   set_friendly: 12,
   unlock: 8,
+  open: 5,
+  close: 5,
   elevator_unlock: 8,
   elevator_up: 0,
   elevator_down: 0,
@@ -73,6 +75,7 @@ const COMMAND_HEAT_COSTS = {
   ddos: 24,
   slow: 10,
   crash: 18,
+  lockdown: 18,
   crack_ice: 22,
   probe_lock: 8,
   inject_bypass: 28,
@@ -108,6 +111,8 @@ const COMMAND_BW_COSTS = {
   feed_loop: 4,
   feed_show_cone: 3,
   unlock: 3,
+  open: 0,
+  close: 0,
   elevator_unlock: 3,
   trigger_vent: 3,
   vent_off: 1,
@@ -123,6 +128,7 @@ const COMMAND_BW_COSTS = {
   cripple: 6,
   slow: 5,
   crash: 7,
+  lockdown: 0,
   inject_bypass: 10,
   upload_creds: 10,
   upload_payload: 10,
@@ -702,8 +708,13 @@ function resolveCommandExecution(pending) {
   }
 
   if (commandId === 'scan_network') {
-    runScanNetwork();
-    noteTutorialCommand('scan_network', args);
+    if (G.blackout) {
+      G.terminalRuntime.responseDelayMs = Math.min(700, (G.terminalRuntime.responseDelayMs || 0) + 250);
+      pushTerminalLine('[SYGNAŁ ZAKŁÓCONY] — blackout tłumi skan sieci.', 'warn');
+    } else {
+      runScanNetwork();
+      noteTutorialCommand('scan_network', args);
+    }
     return;
   }
 
@@ -900,6 +911,12 @@ function resolveCommandExecution(pending) {
     return;
   }
 
+  if (commandId === 'close') {
+    runClose(args, target);
+    noteTutorialCommand('close', args);
+    return;
+  }
+
   if (commandId === 'elevator_unlock') {
     runElevatorUnlock(target);
     noteTutorialCommand('unlock', ['elevator']);
@@ -1003,6 +1020,35 @@ function resolveCommandExecution(pending) {
 
   if (commandId === 'auto_connect_guard') {
     runAutoConnectGuard(args[0]);
+    return;
+  }
+
+  if (commandId === 'lockdown') {
+    if (!target || target.type !== 'drone') {
+      pushTerminalLine('lockdown: requires active drone uplink. connect drone_# first.', 'warn');
+      return;
+    }
+    const LDK_BW = 55;
+    if (G.P.bw < LDK_BW) {
+      pushTerminalLine(`lockdown: insufficient BW (need ${LDK_BW}, have ${Math.floor(G.P.bw)}).`, 'warn');
+      return;
+    }
+    const guards = G.devices ? G.devices.filter((d) => d.type === 'guard' && !d.dead) : [];
+    if (!guards.length) {
+      pushTerminalLine('lockdown: no guard targets in sector.', 'warn');
+      return;
+    }
+    const drone = target.ref;
+    const nearest = guards.reduce((best, g) => {
+      const d = Math.hypot(g.x - (drone?.x || G.P.x), g.y - (drone?.y || G.P.y));
+      return d < best.dist ? { g, dist: d } : best;
+    }, { g: null, dist: Infinity });
+    if (nearest.g) {
+      nearest.g.motoricsResetT = 15000;
+      G.P.bw = Math.max(0, G.P.bw - LDK_BW);
+      addTrace(5, 'drone_lockdown');
+      pushTerminalLine(`lockdown pulse sent. ${nearest.g.id} mobility suppressed (15s). -${LDK_BW} BW.`, 'ok');
+    }
     return;
   }
 
@@ -1654,13 +1700,21 @@ function runUnlock(args, target) {
 }
 
 function runOpen(args, target) {
+  runDoorState(target, true, 'open');
+}
+
+function runClose(args, target) {
+  runDoorState(target, false, 'close');
+}
+
+function runDoorState(target, shouldOpen, verb) {
   if (!target) {
-    pushTerminalLine('open failed: no uplink.', 'warn');
+    pushTerminalLine(`${verb} failed: no uplink.`, 'warn');
     return;
   }
 
   if (target.type !== 'door') {
-    pushTerminalLine(`cannot open non-door: ${target.type}`, 'warn');
+    pushTerminalLine(`cannot ${verb} non-door: ${target.type}`, 'warn');
     return;
   }
 
@@ -1675,7 +1729,12 @@ function runOpen(args, target) {
     return;
   }
 
-  door.open = !door.open;
+  if (door.open === shouldOpen) {
+    pushTerminalLine(`door already ${shouldOpen ? 'open' : 'closed'}: ${target.id}`, 'dim');
+    return;
+  }
+
+  door.open = shouldOpen;
   const newTile = door.open ? TILE_TYPES.DOOR_OPEN : TILE_TYPES.DOOR_CLOSED;
   G.tiles[door.y][door.x] = newTile;
   patchTileFlat(door.x, door.y, newTile);

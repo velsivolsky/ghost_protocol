@@ -377,7 +377,7 @@ function buildPanelMap(G) {
     if (door && tileFlat && tileFlat_mapW > 0) {
       doorOpen = (tileFlat[door.y * tileFlat_mapW + door.x] & 0xFF) === TILE_TYPES.DOOR_OPEN;
     }
-    m.set((panel.y << 16) | panel.x, doorOpen);
+    m.set(`${panel.y},${panel.x}`, doorOpen);
   }
   return m;
 }
@@ -646,8 +646,8 @@ export function renderFrame(G) {
       colFace[outCol] = hitFace;
 
       // Collect tile hits for texture overlay
-      if (hitTile !== TILE_TYPES.WALL || neonWallMap.has((mapY << 16) | mapX)) {
-        const key = (mapY << 16) | mapX;
+      if (hitTile !== TILE_TYPES.WALL || neonWallMap.has(`${mapY},${mapX}`)) {
+        const key = `${mapY},${mapX}`;
         const ex  = wallHitMap.get(key);
         if (!ex) {
           wallHitMap.set(key, { hitTile, minCol: outCol, maxCol: outCol, drawStart, drawEnd, perpDist, mapX, mapY });
@@ -722,6 +722,7 @@ export function renderFrame(G) {
     _drawWallAtlasColumns(G, ctx, W, atlasReady);
   }
   _drawTerminalSheetColumns(G, ctx, W, panelMap);
+  _drawNeonSheetColumns(G, ctx, W, neonWallMap);
   _drawElevatorSheetColumns(G, ctx, W);
   _drawDoorSheetColumns(G, ctx, W);
   _drawWallTextures(G, ctx, wallHitMap, panelMap, neonWallMap, W, H, halfH);
@@ -934,7 +935,25 @@ function _drawDoorSheetColumns(G, ctx, W) {
   const doorUnlockedAt = new Map();
   if (G.doors) {
     for (const d of G.doors) {
-      doorUnlockedAt.set((d.y << 16) | d.x, !!d.unlocked);
+      doorUnlockedAt.set(`${d.y},${d.x}`, !!d.unlocked);
+    }
+  }
+
+  // Build on-screen spans for each visible door tile (min/max columns),
+  // so we can preserve texture aspect by cropping UVs instead of stretching.
+  const doorSpans = new Map();
+  for (let i = 0; i < W; i += 1) {
+    const tile = colHitTile[i];
+    if (tile !== TILE_TYPES.DOOR_CLOSED && tile !== TILE_TYPES.DOOR_LOCKED) continue;
+    const mapX = colMapX[i] | 0;
+    const mapY = colMapY[i] | 0;
+    const key = `${mapY},${mapX}`;
+    const existing = doorSpans.get(key);
+    if (!existing) {
+      doorSpans.set(key, { minCol: i, maxCol: i });
+    } else {
+      if (i < existing.minCol) existing.minCol = i;
+      if (i > existing.maxCol) existing.maxCol = i;
     }
   }
 
@@ -945,15 +964,32 @@ function _drawDoorSheetColumns(G, ctx, W) {
     const rowH = colDrawEnd[col] - colDrawStart[col];
     if (rowH < 1) continue;
 
-    const fogF = Math.max(0, 1 - colPerpDist[col] / 14);
+    const dist = colPerpDist[col];
+    const fogF = Math.max(0, 1 - dist / 14);
     if (fogF <= 0.03) continue;
 
     const mapX = colMapX[col] | 0;
     const mapY = colMapY[col] | 0;
-    const unlocked = doorUnlockedAt.get((mapY << 16) | mapX) || false;
+    const unlocked = doorUnlockedAt.get(`${mapY},${mapX}`) || false;
     const frameOffsetY = unlocked ? frameH : 0;
 
-    const u = Math.max(0, Math.min(0.9995, colTexU[col]));
+    let u = Math.max(0, Math.min(0.9995, colTexU[col]));
+
+    const span = doorSpans.get(`${mapY},${mapX}`);
+    if (span) {
+      const spanW = Math.max(1, span.maxCol - span.minCol + 1);
+      const sourceAspect = frameW / Math.max(1, frameH);
+      const destAspect = spanW / Math.max(1, rowH);
+
+      // If the projected door is wider than the source aspect, crop UV horizontally
+      // to keep door details proportionate instead of stretching left/right.
+      if (destAspect > sourceAspect) {
+        const visibleUSpan = Math.max(0.08, Math.min(1, sourceAspect / destAspect));
+        const inset = (1 - visibleUSpan) * 0.5;
+        u = inset + u * visibleUSpan;
+      }
+    }
+
     const sampleX = Math.max(0, Math.min(frameW - 1, (u * frameW) | 0));
 
     ctx.save();
@@ -967,6 +1003,70 @@ function _drawDoorSheetColumns(G, ctx, W) {
       ctx.globalAlpha = 1;
       ctx.fillStyle = SHADE_STRINGS[Math.min(72, (shade * 100 + 0.5) | 0)];
       ctx.fillRect(col, colDrawStart[col], 1, rowH + 1);
+    }
+    ctx.restore();
+  }
+}
+
+function _drawNeonSheetColumns(G, ctx, W, neonWallMap) {
+  if (!(G.neonPanelSpriteLoaded && G.neonPanelSpriteImage && !G.neonPanelSpriteError)) return;
+
+  const img = G.neonPanelSpriteImage;
+  const imgW = img.naturalWidth || img.width || 0;
+  const imgH = img.naturalHeight || img.height || 0;
+  if (imgW <= 0 || imgH <= 0) return;
+
+  const cellW = Math.max(1, (imgW / NEON_PANEL_SPRITE_COLS) | 0);
+  const cellH = Math.max(1, (imgH / NEON_PANEL_SPRITE_ROWS) | 0);
+  const frameCount = Math.max(1, NEON_PANEL_SPRITE_COLS * NEON_PANEL_SPRITE_ROWS);
+
+  // Draw as a wall-anchored decal band, not as a stretched quad across tile width.
+  const panelWidthRatio = 0.7;
+  const panelInset = (1 - panelWidthRatio) * 0.5;
+
+  for (let col = 0; col < W; col += 1) {
+    const tile = colHitTile[col];
+    if (tile !== TILE_TYPES.WALL) continue;
+
+    const mapX = colMapX[col] | 0;
+    const mapY = colMapY[col] | 0;
+    const neonDev = neonWallMap.get(`${mapY},${mapX}`);
+    if (!neonDev) continue;
+
+    const rowH = colDrawEnd[col] - colDrawStart[col];
+    if (rowH < 1) continue;
+
+    const dist = colPerpDist[col];
+    const fogF = Math.max(0, 1 - dist / 14);
+    if (fogF <= 0.03) continue;
+
+    const uRaw = Math.max(0, Math.min(0.9995, colTexU[col]));
+    if (uRaw < panelInset || uRaw > (1 - panelInset)) {
+      continue;
+    }
+    const u = 1 - ((uRaw - panelInset) / panelWidthRatio);
+
+    const frame = neonDev.active
+      ? Math.min(frameCount - 1, NEON_PANEL_SPRITE_OFFLINE)
+      : 0;
+    const sx = (frame % NEON_PANEL_SPRITE_COLS) * cellW;
+    const sy = ((frame / NEON_PANEL_SPRITE_COLS) | 0) * cellH;
+    const sampleX = sx + Math.max(0, Math.min(cellW - 1, (u * cellW) | 0));
+
+    const panelH = Math.max(12, (rowH * 0.75) | 0);
+    const panelY = colDrawStart[col] + ((rowH - panelH) >> 1);
+
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, fogF * 1.22);
+    ctx.drawImage(img, sampleX, sy, 1, cellH, col, panelY, 1, panelH);
+
+    const sideShade = colSide[col] === 1 ? 0.2 : 0;
+    const fogShade = Math.max(0, 1 - fogF) * 0.72;
+    const shade = Math.min(0.72, sideShade + fogShade);
+    if (shade > 0.01) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = SHADE_STRINGS[Math.min(72, (shade * 100 + 0.5) | 0)];
+      ctx.fillRect(col, panelY, 1, panelH);
     }
     ctx.restore();
   }
@@ -996,7 +1096,8 @@ function _drawTerminalSheetColumns(G, ctx, W, panelMap) {
     const rowH = colDrawEnd[col] - colDrawStart[col];
     if (rowH < 1) continue;
 
-    const fogF = Math.max(0, 1 - colPerpDist[col] / 14);
+    const dist = colPerpDist[col];
+    const fogF = Math.max(0, 1 - dist / 14);
     if (fogF <= 0.03) continue;
 
     const mapX = colMapX[col] | 0;
@@ -1808,7 +1909,7 @@ function _buildNeonWallMap(G) {
     // device.x/y = wallTileX + 0.5 (added by createDistraction)
     const tx = Math.floor(dev.x);
     const ty = Math.floor(dev.y);
-    m.set((ty << 16) | tx, dev);
+    m.set(`${ty},${tx}`, dev);
   }
   return m;
 }
@@ -1833,23 +1934,7 @@ function _drawWallTextures(G, ctx, wallHitMap, panelMap, neonWallMap, W, H, half
 
     switch (hitTile) {
       case TILE_TYPES.WALL: {
-        const neonDev = neonWallMap.get((mapY << 16) | mapX);
-        if (neonDev && G.neonPanelSpriteLoaded && G.neonPanelSpriteImage && !G.neonPanelSpriteError) {
-          const img = G.neonPanelSpriteImage;
-          const spW = img.naturalWidth || img.width || 0;
-          const spH = img.naturalHeight || img.height || 0;
-          const cellW = Math.max(1, (spW / NEON_PANEL_SPRITE_COLS) | 0);
-          const cellH = Math.max(1, (spH / NEON_PANEL_SPRITE_ROWS) | 0);
-          const frameCount = Math.max(1, NEON_PANEL_SPRITE_COLS * NEON_PANEL_SPRITE_ROWS);
-          const frame = neonDev.active ? Math.min(frameCount - 1, NEON_PANEL_SPRITE_OFFLINE) : 0;
-          const sx = (frame % NEON_PANEL_SPRITE_COLS) * cellW;
-          const sy = ((frame / NEON_PANEL_SPRITE_COLS) | 0) * cellH;
-          const panelH = Math.max(12, (rowH * 0.75) | 0);
-          const panelY = drawStart + ((rowH - panelH) >> 1);
-          ctx.globalAlpha = Math.min(1, fogF * 1.22);
-          ctx.drawImage(img, sx, sy, cellW, cellH, minCol, panelY, colW, panelH);
-          ctx.globalAlpha = 1;
-        }
+        // Neon wall panels are drawn per-column in _drawNeonSheetColumns.
         break;
       }
       case TILE_TYPES.MAIN_TERMINAL: {
@@ -1878,7 +1963,7 @@ function _drawWallTextures(G, ctx, wallHitMap, panelMap, neonWallMap, W, H, half
         if (_drawTerminalSheetTile(G, ctx, minCol, drawStart, colW, rowH, fogF, hitTile, st)) {
           break;
         }
-        const doorOpen = panelMap.get((mapY << 16) | mapX) || false;
+        const doorOpen = panelMap.get(`${mapY},${mapX}`) || false;
         _texWallPanel(ctx, minCol, drawStart, colW, rowH, fogF, doorOpen);
         break;
       }
@@ -1916,7 +2001,7 @@ function _getConsoleStateForTile(G, tileType, mapX, mapY, panelMap) {
   }
 
   if (tileType === TILE_TYPES.WALL_TERMINAL) {
-    const doorOpen = panelMap.get((mapY << 16) | mapX) || false;
+    const doorOpen = panelMap.get(`${mapY},${mapX}`) || false;
     return doorOpen ? CONSOLE_STATE.HACKED : CONSOLE_STATE.LOCKED;
   }
 
@@ -1935,8 +2020,59 @@ function _oppositeFace(face) {
   return (face + 2) & 3;
 }
 
+function _faceOffset(face) {
+  switch (face | 0) {
+    case FACE_N: return { x: 0, y: -1 };
+    case FACE_E: return { x: 1, y: 0 };
+    case FACE_S: return { x: 0, y: 1 };
+    case FACE_W: return { x: -1, y: 0 };
+    default: return { x: 0, y: 0 };
+  }
+}
+
+function _tileAtFlat(x, y) {
+  if (!tileFlat || x < 0 || y < 0 || x >= tileFlat_mapW || y >= tileFlat_mapH) {
+    return TILE_TYPES.WALL;
+  }
+  return tileFlat[y * tileFlat_mapW + x] & 0xFF;
+}
+
+function _isPassableAtFlat(x, y) {
+  const tile = _tileAtFlat(x, y);
+  return IS_PASSABLE[tile] === 1;
+}
+
 function _getTerminalFrontFace(mapX, mapY) {
-  // Deterministic pseudo-random facing per tile; exact front direction is not gameplay-critical.
+  const faces = [FACE_N, FACE_E, FACE_S, FACE_W];
+  const openFaces = [];
+
+  for (const face of faces) {
+    const off = _faceOffset(face);
+    if (_isPassableAtFlat(mapX + off.x, mapY + off.y)) {
+      openFaces.push(face);
+    }
+  }
+
+  if (openFaces.length === 1) {
+    return openFaces[0];
+  }
+
+  // Prefer a face where the opposite side is solid (panel embedded in a wall).
+  const wallBacked = [];
+  for (const face of openFaces) {
+    const back = _faceOffset(_oppositeFace(face));
+    if (!_isPassableAtFlat(mapX + back.x, mapY + back.y)) {
+      wallBacked.push(face);
+    }
+  }
+
+  const candidates = wallBacked.length ? wallBacked : openFaces;
+  if (candidates.length > 0) {
+    const hash = (((mapX * 73856093) ^ (mapY * 19349663)) >>> 0);
+    return candidates[hash % candidates.length];
+  }
+
+  // Fallback for isolated/special tiles.
   const hash = (((mapX * 73856093) ^ (mapY * 19349663)) >>> 0);
   return hash & 3;
 }
@@ -2166,8 +2302,27 @@ function _drawSprites(G, ctx, W, H, halfH, px, py, dirX, dirY, planeX, planeY, i
       continue;
     }
     if (sp.kind === 'dev' && sp.dev) {
+      const devType = String(sp.dev.type || '').toLowerCase();
       const nt = String(sp.dev.nodeType || '').toLowerCase();
+
+      // Wall/door nodes are rendered in wall-column passes; drawing them as billboards
+      // causes camera-facing artifacts (panel billboarding and stretched doors up close).
+      if (
+        devType === 'door'
+        || devType === 'wterm'
+        || devType === 'mainterm'
+        || devType === 'sideterm'
+        || devType === 'code_term'
+      ) {
+        continue;
+      }
+
       if (sp.dev.type === 'distract' && (nt === 'lights' || nt === 'vent')) {
+        continue;
+      }
+      // Wall-mounted nodes are rendered as decals on WALL columns in _drawWallTextures.
+      // Do not render them as billboards, otherwise they rotate towards the player.
+      if (sp.dev.type === 'distract' && (nt === 'wallpanel' || nt === 'junction')) {
         continue;
       }
     }

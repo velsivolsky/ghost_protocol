@@ -122,6 +122,8 @@ export function ensureHubState() {
   if (!Object.prototype.hasOwnProperty.call(G.hub, 'activeOperatorId')) G.hub.activeOperatorId = null;
   if (!Object.prototype.hasOwnProperty.call(G.hub, 'runResolved')) G.hub.runResolved = false;
   if (!Object.prototype.hasOwnProperty.call(G.hub, 'activeRunMeta')) G.hub.activeRunMeta = null;
+  if (!Array.isArray(G.hub.runHistory)) G.hub.runHistory = [];
+  if (typeof G.hub.pendingDeadDrop !== 'boolean') G.hub.pendingDeadDrop = false;
   if (!G.hub.runIntelCache || typeof G.hub.runIntelCache !== 'object') G.hub.runIntelCache = {};
 
   const normalizeCrewSelection = () => {
@@ -587,4 +589,26 @@ export function processRunOutcome(success) {
   rotateRunBoardAfterRun();
   saveHubState();
   return { removedAliases: removed };
+}
+
+/**
+ * Returns passive buffs for the currently active (on-mission) operator.
+ * traceDecayMult: multiplier on trace decay rate (>1 = faster decay)
+ * bwCostMult:     multiplier on BW costs in network breach (<1 = cheaper)
+ * panicRisk:      chance per 60s tick when alert>70 that operator panics and abandons run
+ */
+export function getActiveOperatorBuffs() {
+  ensureHubState();
+  const op = G.hub.crew?.find((m) => m.id === G.hub.activeOperatorId);
+  if (!op) {
+    return { traceDecayMult: 1, bwCostMult: 1, panicRisk: 0 };
+  }
+  if (op.tier === 'ghost') {
+    return { traceDecayMult: 1.25, bwCostMult: 0.75, panicRisk: op.panicRisk || 0.02 };
+  }
+  if (op.tier === 'operator') {
+    return { traceDecayMult: 1.10, bwCostMult: 0.90, panicRisk: op.panicRisk || 0.08 };
+  }
+  // skid
+  return { traceDecayMult: 1.0, bwCostMult: 1.0, panicRisk: op.panicRisk || 0.25 };
 }

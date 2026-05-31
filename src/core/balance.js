@@ -11,6 +11,9 @@ export const TRACE_BALANCE = {
 	tierScrambleMs: [0, 10000, 12000, 16000],
 	tierFalseOutputMs: [0, 0, 12000, 18000],
 	tierAlertGain: [0, 0, 8, 16],
+	alertDecayPenaltyStart: 60,
+	alertDecayPenaltyPerPoint: 0.004,
+	peakTierDecayMult: 0.80,
 };
 
 export const BREACH_BALANCE = {

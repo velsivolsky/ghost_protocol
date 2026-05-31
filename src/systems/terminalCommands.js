@@ -235,6 +235,16 @@ export const COMMAND_REGISTRY = [
     help: 'open - open connected door (requires panel unlock)',
   },
   {
+    id: 'close',
+    phrase: 'close',
+    aliases: [],
+    namespace: 'control',
+    requiredContext: 'connected',
+    noise: 5,
+    latencyMs: 280,
+    help: 'close - close connected door',
+  },
+  {
     id: 'elevator_up',
     phrase: 'elevator up',
     aliases: ['lift up'],

@@ -1,4 +1,5 @@
 import { MAP_H, MAP_W, TILE_TYPES, WALL_ATLAS_VARIANTS } from '../core/constants.js';
+import { G } from '../core/state.js';
 
 // Multi-floor map generator
 export function generateMultiFloorMap(floorCount = 3) {
@@ -297,6 +298,22 @@ export function generateMap(opts = {}) {
 	ensureCriticalPaths(tiles, entrance, mainTerminal, sideTerminals, distractionNodes);
 	const wallVariants = buildWallVariants(tiles);
 
+	// Dead Drop: place in a non-entrance room if hub has a pending drop
+	let deadDropTile = null;
+	if (G.hub?.pendingDeadDrop) {
+		const candidateRooms = rooms.slice(2); // skip entrance room
+		const shuffled = [...candidateRooms].sort(() => Math.random() - 0.5);
+		for (const room of shuffled) {
+			const cx = room.x + 1 + ((Math.random() * Math.max(1, room.w - 2)) | 0);
+			const cy = room.y + 1 + ((Math.random() * Math.max(1, room.h - 2)) | 0);
+			if (tiles[cy]?.[cx] === TILE_TYPES.FLOOR) {
+				deadDropTile = { x: cx, y: cy };
+				G.hub.pendingDeadDrop = false;
+				break;
+			}
+		}
+	}
+
 	return {
 		tiles,
 		wallVariants,
@@ -309,6 +326,7 @@ export function generateMap(opts = {}) {
 		hideSpots,
 		distractionNodes,
 		lamps,
+		deadDropTile,
 		hasCodeTerminal: opts.codeTerminal || false,
 		stairsUp: null,
 		stairsDown: null,

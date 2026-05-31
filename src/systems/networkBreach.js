@@ -1,7 +1,7 @@
 import { G } from '../core/state.js';
 import { completeMainHack, handleMainHackFailure } from './mission.js';
 import { addTrace } from './traceSystem.js';
-import { maybeGrantContactFromMainTerminal } from './recruitment.js';
+import { maybeGrantContactFromMainTerminal, getActiveOperatorBuffs } from './recruitment.js';
 import { maybeGrantDataFragment, saveDataFragments } from './dataFragments.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -370,7 +370,8 @@ export function handleUseBreachAction(actionId, log = logBreachLine) {
 		return false;
 	}
 	const drainExtra = (!state.iceDefeated && state.iceShieldLayers.includes('drain')) ? 4 : 0;
-	const totalBwCost = (def.bwCost || 0) + drainExtra;
+	const { bwCostMult } = getActiveOperatorBuffs();
+	const totalBwCost = Math.round(((def.bwCost || 0) * bwCostMult) + drainExtra);
 	if (totalBwCost > 0 && G.P.bw < totalBwCost) {
 		log(`Za malo BW. Potrzeba: ${totalBwCost}${drainExtra > 0 ? ` (+${drainExtra} DRAIN)` : ''}, masz: ${Math.floor(G.P.bw)}`);
 		return false;
@@ -825,9 +826,11 @@ export function handleDisconnectExfil(log = logBreachLine) {
 		}
 		G.P.cr = (G.P.cr || 0) + creditsAmount;
 		G.lastBreachRating = rating;
-		if (rating === 'GHOST') log(`GHOST RATING — trace=${Math.floor(traceValue)}. +40% BONUS: ¥${creditsAmount}`);
-		else if (rating === 'HOT') log(`HOT RATING — trace=${Math.floor(traceValue)}. Standard: ¥${creditsAmount}`);
-		else log(`CLEAN RATING — ¥${creditsAmount} zasililo konto.`);
+		if (rating === 'GHOST') {
+			log(`GHOST RATING \u2014 trace=${Math.floor(traceValue)}. +40% BONUS: \u00a5${creditsAmount}`);
+			if (G.hub) G.hub.pendingDeadDrop = true;
+		} else if (rating === 'HOT') log(`HOT RATING \u2014 trace=${Math.floor(traceValue)}. Standard: \u00a5${creditsAmount}`);
+		else log(`CLEAN RATING \u2014 \u00a5${creditsAmount} zasililo konto.`);
 	}
 
 	// Restore BW max after breach

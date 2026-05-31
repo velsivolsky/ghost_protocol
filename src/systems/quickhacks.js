@@ -443,6 +443,10 @@ function renderQuickHackChoices() {
 
 	const equipped = getEquippedQuickHackIds();
 
+	const guards = G.devices ? G.devices.filter((d) => d.type === 'guard' && !d.dead) : [];
+	const maxOpticsT = guards.reduce((m, g) => Math.max(m, g.opticsOfflineT || 0), 0);
+	const maxMotoricsT = guards.reduce((m, g) => Math.max(m, g.motoricsResetT || 0), 0);
+
 	for (const hackId of equipped) {
 		const hack = QUICK_HACKS[hackId];
 		if (!hack) {
@@ -455,7 +459,12 @@ function renderQuickHackChoices() {
 		button.type = 'button';
 		button.dataset.qhId = hack.id;
 		button.disabled = !canUse;
-		button.innerHTML = `<span>${hack.name}</span><span>x${count} | BW:${hack.bw}</span>`;
+
+		let activeTag = '';
+		if (hackId === 'optics' && maxOpticsT > 0) activeTag = ` <span style="color:#00ff9f">▶${Math.ceil(maxOpticsT / 1000)}s</span>`;
+		if ((hackId === 'motorics' || hackId === 'ghostmesh' || hackId === 'lagspike') && maxMotoricsT > 0) activeTag = ` <span style="color:#ffd700">▶${Math.ceil(maxMotoricsT / 1000)}s</span>`;
+
+		button.innerHTML = `<span>${hack.name}${activeTag}</span><span>x${count} | BW:${hack.bw}</span>`;
 		G.dom.quickHackChoices.appendChild(button);
 	}
 }

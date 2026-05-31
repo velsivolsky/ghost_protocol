@@ -530,3 +530,20 @@ export function getProbabilityLabel(prob) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const ALL_CATEGORIES = Object.keys(CATEGORY_COLORS);
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PARANOIA PRESSURE
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns passive trace pressure per second based on high-paranoia fragments collected.
+ * Each paranoiaLevel >= 4 fragment contributes 0.025 trace/s, capped at 0.5/s.
+ */
+export function getParanoiaPressure() {
+  if (!G.hub?.dataFragments?.collected) return 0;
+  const count = FRAGMENT_DEFINITIONS.filter(
+    (f) => G.hub.dataFragments.collected.includes(f.id) && f.paranoiaLevel >= 4,
+  ).length;
+  return Math.min(0.5, count * 0.025);
+}

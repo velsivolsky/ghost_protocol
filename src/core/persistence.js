@@ -33,6 +33,7 @@ export function saveHubState() {
 			selectedOperatorId: G.hub.selectedOperatorId,
 			activeOperatorId: G.hub.activeOperatorId,
 			runResolved: G.hub.runResolved,
+			runHistory: (G.hub.runHistory || []).slice(-20),
 		}));
 	} catch {
 		// Ignore storage failures.
@@ -71,6 +72,7 @@ export function loadHubState() {
 		if (Object.prototype.hasOwnProperty.call(parsed, 'selectedOperatorId')) G.hub.selectedOperatorId = parsed.selectedOperatorId;
 		if (Object.prototype.hasOwnProperty.call(parsed, 'activeOperatorId')) G.hub.activeOperatorId = parsed.activeOperatorId;
 		if (typeof parsed.runResolved === 'boolean') G.hub.runResolved = parsed.runResolved;
+		if (Array.isArray(parsed.runHistory)) G.hub.runHistory = parsed.runHistory;
 
 		if (G.P && typeof G.hub.walletCredits === 'number') {
 			G.P.cr = G.hub.walletCredits;
