@@ -1147,7 +1147,7 @@
           showUsage: 'show: use login or password',
           confirmChoices: '(y/n)',
           invalidPassword: 'ACCESS DENIED: credential imprint mismatch',
-          passwordHintSoft: 'Hint: legacy auth expects protocol + incident_sector + @ + schema.',
+          passwordHintSoft: 'Hint: legacy auth expects <protocol>_<sector>@<schema>. Protocol name: /users/ghost/protocol.txt.',
           passwordHintHard: 'Critical hint: try protocol_23@11',
           invalidLogin: 'Use: login ghost (operator handle required)',
           notFound: 'command not found',
@@ -1162,10 +1162,10 @@
           cancelled: 'Aborted. Keeping the lock sealed.',
           datePrefix: 'Node date:',
           hints: [
-            'hint #1: Recovered authentication traces detected in user logs.',
+            'hint #1: Recovered authentication traces are in /users/ghost/auth.log.',
             'hint #2: Operator identity may still exist inside archived access records.',
-            'hint #3: Sector 23 and schema v11 appear repeatedly in recovered files.',
-            'hint #4: The access phrase may combine protocol name, incident sector and schema version. Try protocol_23@11.'
+            'hint #3: Sector 23 and schema v11 repeat in /users/ghost/sectors.map and session.log.',
+            'hint #4: Format: protocol name from protocol.txt, underscore, sector, @, schema. Try protocol_23@11.'
           ],
           help: 'DOSTEPNE KOMENDY\n\nhelp - wyswietl dostepne komendy\nls - pokaz zawartosc katalogu\ncd - zmien biezacy katalog\npwd - pokaz biezaca sciezke\ncat - odczytaj zawartosc pliku\nclear - wyczysc terminal\nlogin - uwierzytelnij operatora\nlogout - zakoncz sesje\nhint - pokaz kontekstowa wskazowke\nlang <pl/en> - zmien jezyk terminala\nshow login - ujawnij login\nshow password - ujawnij haslo\nwhoami - aktualny uzytkownik sesji\necho - wypisz tekst\ndate - data systemowa',
           boot: [
@@ -1192,7 +1192,7 @@
           showUsage: 'show: uzyj login albo password',
           confirmChoices: '(t/n)',
           invalidPassword: 'ODMOWA DOSTEPU: odcisk danych logowania niezgodny',
-          passwordHintSoft: 'Wskazowka: legacy auth oczekuje formatu protocol + sektor_incydentu + @ + schema.',
+          passwordHintSoft: 'Wskazowka: legacy auth oczekuje formatu protokol_sektor@schema. Nazwe protokolu sprawdz w /users/ghost/protocol.txt.',
           passwordHintHard: 'Wskazowka krytyczna: sprobuj protocol_23@11',
           invalidLogin: 'Uzyj: login ghost (wymagany identyfikator operatora)',
           notFound: 'nie znaleziono komendy',
@@ -1207,10 +1207,10 @@
           cancelled: 'Przerwano. Blokada pozostaje zapieczetowana.',
           datePrefix: 'Data wezla:',
           hints: [
-            'hint #1: Odzyskane slady autoryzacji wykryto w logach uzytkownika.',
+            'hint #1: Odzyskane slady autoryzacji sa w /users/ghost/auth.log.',
             'hint #2: Tozsamosc operatora moze nadal istniec w archiwalnych rekordach dostepu.',
-            'hint #3: Sektor 23 i schema v11 powtarzaja sie w odzyskanych plikach.',
-            'hint #4: Fraza dostepu moze laczyc nazwe protokolu, sektor incydentu i wersje schematu. Sprobuj protocol_23@11.'
+            'hint #3: Sektor 23 i schema v11 powtarzaja sie w /users/ghost/sectors.map i session.log.',
+            'hint #4: Format: nazwa protokolu z protocol.txt, podkreslnik, sektor, @, schema. Sprobuj protocol_23@11.'
           ],
           help: 'AVAILABLE COMMANDS\n\nhelp - display available commands\nls - list directory contents\ncd - change current directory\npwd - print current directory\ncat - read file contents\nclear - clear terminal\nlogin - authenticate operator\nlogout - terminate session\nhint - show contextual hint\nlang <pl/en> - change terminal language\nshow login - reveal login\nshow password - reveal password\nwhoami - current session user\necho - print text\ndate - system date',
           boot: [
