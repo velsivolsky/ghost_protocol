@@ -1076,11 +1076,11 @@
       const STORAGE_KEY = 'gp_recovery_terminal_state';
       const FS = {
         '/': { type: 'dir', contents: ['archive', 'sys', 'logs', 'cache', 'net', 'users', 'mnt'] },
-        '/archive': { type: 'dir', contents: [] },
-        '/sys': { type: 'dir', contents: [] },
-        '/logs': { type: 'dir', contents: [] },
-        '/cache': { type: 'dir', contents: [] },
-        '/net': { type: 'dir', contents: [] },
+        '/archive': { type: 'dir', contents: ['relay.txt'] },
+        '/sys': { type: 'dir', contents: ['mirror.note'] },
+        '/logs': { type: 'dir', contents: ['watchdog.log'] },
+        '/cache': { type: 'dir', contents: ['fragment.dat'] },
+        '/net': { type: 'dir', contents: ['echo.txt'] },
         '/users': { type: 'dir', contents: ['ghost'] },
         '/users/ghost': { type: 'dir', contents: ['memo.txt', 'auth.log', 'sectors.map', 'protocol.txt', 'session.log'] },
         '/mnt': { type: 'dir', contents: ['node'] },
@@ -1089,11 +1089,16 @@
 
       const FILES = {
         '/mnt/node/memo.txt': 'jesli to czytasz, wezel nadal jest aktywny.\nnie jestes tu sam.\n\nzacznij od podstaw i sprawdz co system potrafi.\nuzyj: help\n\nmoje pliki zostaly w /users/ghost. zajrzyj tam.\nczytaj odzyskane pliki uwaznie. powtorzenia nie sa przypadkowe.\n\nprotocol jest kluczem. reszta to tylko sposob, w jaki go podac.\n\nsektor 23 jest zablokowany, ale nie skompromitowany.\nzamek trzyma, ale drzwi nadal stoja.\nschema v11 jest stara, ale blokada nadal powinna jej sluchac.\npytanie tylko: na czyich zasadach? tych, ktore przejely wladze po relay.\n\nwszystko jest kontrolowane. nie ma gdzie sie ukryc.\nwidza kazdy twoj ruch, kazde wcisniecie klawisza.\nsystem wie. tak bylo ze mna.\n\nkazdy blad komendy to tez wskazowka.\noni tez to czytaja.\n\nspiesz sie... ida.\n\n- k',
-        '/users/ghost/memo.txt': 'jesli ten node jeszcze kiedykolwiek wstanie,\nnie ufaj mirrorom w /sys.\n\nghost nadal ma prawa do shella.\nco sie zmienilo po incydencie: protocol.txt\n\njesli slyszysz szum w /cache, odetnij linie.\n\n- k',
+        '/users/ghost/memo.txt': 'jesli ten node jeszcze kiedykolwiek wstanie,\nnie ufaj mirrorom w /sys.\n\nghost nadal ma prawa do shella.\nco sie zmienilo po incydencie: protocol.txt\n\njesli slyszysz szum w /cache, odetnij linie.\nw /logs i /net ktos zostawil echo. posluchaj go.\n\n- k',
         '/users/ghost/auth.log': '[AUTH_001] 2089-02-02 09:41:07 | ghost   | LOGOWANIE    | SUKCES | fraza:relay_04@03\n[AUTH_002] 2089-03-01 12:15:33 | ghost   | LOGOWANIE    | SUKCES\n[AUTH_003] 2089-03-05 08:22:11 | ghost   | ODPYTANIE_SEKTORA | CZESCIOWE | sektor:23\n[AUTH_004] 2089-03-12 14:30:22 | ghost   | EDYCJA_KONFIGU | SUKCES | schema:v11\n[AUTH_005] 2089-03-15 04:23:12 | system  | BLOKADA      | AKTYWNA | incydent:sektor_23\n[AUTH_006] 2089-03-15 04:23:16 | unknown | LOGOWANIE    | ODMOWA  | slad:wypalony\n[AUTH_007] 2089-03-15 04:23:20 | unknown | LOGOWANIE    | ODMOWA  | zrodlo:brak\n\n[ARCHIWUM] relay_04@03 :: sektor 04, schema v03, protokol relay',
-        '/users/ghost/sectors.map': 'STATUS SEKTOROW\n\n23 :: ZABLOKOWANY [czarna kwarantanna, miejsce incydentu]\n11 :: PRZEKIEROWANO SCHEME LEGACY\n04 :: ARCHIWALNY\nNET :: ZDEGRADOWANY [przebicie echa]\nCACHE :: NIESTABILNY [slady szczatkowe]\nARCHIVE :: CZESCIOWY [brak zapieczetowanych blokow]',
-        '/users/ghost/protocol.txt': 'relay wycofany po incydencie w sektorze 23.\nprotocol przejal jego role.\n\nlegacy schema v11 nadal aktywna.\nstara fraza dostepu przestala dzialac.',
-        '/users/ghost/session.log': 'SLAD SESJI\n\noperator: ghost\nschema autoryzacji: legacy_v11\nsektor protokolu: 23\nflaga odzyskiwania: wlaczona\nproces cienia: nierozwiazany\nostatni heartbeat: 2089-03-15 04:23:11'
+        '/users/ghost/sectors.map': 'STATUS SEKTOROW\n\n23 :: ZABLOKOWANY [czarna kwarantanna, miejsce incydentu, nie skompromitowany]\n11 :: PRZEKIEROWANO SCHEME LEGACY\n04 :: ARCHIWALNY\nNET :: ZDEGRADOWANY [przebicie echa]\nCACHE :: NIESTABILNY [slady szczatkowe]\nARCHIVE :: CZESCIOWY [brak zapieczetowanych blokow]',
+        '/users/ghost/protocol.txt': 'relay wycofany po incydencie w sektorze 23.\nprotocol przejal jego role.\n\nlegacy schema v11 nadal aktywna.\nstara fraza dostepu przestala dzialac.\n\nzamek pyta o dwie rzeczy: kto trzyma klucz\ni na ktorej schemie jeszcze slucha.',
+        '/users/ghost/session.log': 'SLAD SESJI\n\noperator: ghost\nschema autoryzacji: legacy_v11\nsektor protokolu: 23\nklucz sesji: nowy protocol (relay wycofany)\nflaga odzyskiwania: wlaczona\nproces cienia: nierozwiazany\nostatni heartbeat: 2089-03-15 04:23:11',
+        '/archive/relay.txt': 'relay :: protokol dostepowy do czasu incydentu.\nstatus: WYCOFANY. zastapiony.\nzostal tylko tu, w archiwum.\n\nostatnie uzycie: sektor 04, schema v03.\nkto go uzyje teraz, zostanie zapamietany.',
+        '/sys/mirror.note': 'MIRROR :: kopia lustrzana wezla\n\nnie ufaj mirrorom.\nmirror pokazuje to, co chcesz zobaczyc,\nnie to, co jest.\n\nprawdziwe slady sa w /users/ghost.',
+        '/logs/watchdog.log': '[WATCHDOG] 04:23:14 sesja ghost :: OBSERWOWANA\n[WATCHDOG] 04:23:16 proba logowania frazą sprzed incydentu: ODMOWA\n[WATCHDOG] 04:23:19 powod: protokol wycofany\n[WATCHDOG] 04:23:25 watchdog wyciszony. ktos patrzy dalej.\n[WATCHDOG] kazda komenda jest zapisywana.',
+        '/cache/fragment.dat': '~~ sz..um ~~\n... pr0t0c0l ... zamek ... 23 ...\n... v11 ... legacy ... slucha ...\n... ghost ... nie wchodz bez ...\n~~ sygnal utracony ~~',
+        '/net/echo.txt': 'ECHO z sektora 23 [przebicie]\n\nzamek nie jest zlamany. zamek jest ZAMKNIETY.\nroznica: nikt go nie wlamal, wiec nadal ma klucz.\nnazwa klucza byla pierwsza rzecza, ktora zmienili.\nschema, ktora jeszcze slucha: ta stara.\n\nspiesz sie. ida.'
       };
 
       const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'clear', 'login', 'logout', 'hint', 'lang', 'show', 'whoami', 'echo', 'date'];
