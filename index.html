@@ -1088,12 +1088,12 @@
       };
 
       const FILES = {
-        '/mnt/node/memo.txt': 'jesli to czytasz, wezlem nadal jest aktywny.\n\nzacznij od podstaw i sprawdz co system potrafi.\nuzyj: help\n\nczytaj odzyskane pliki uwaznie. powtorzenia nie sa przypadkowe.\nsektor 23 to nie miejsce, tylko blizna po incydencie.\nschema v11 jest stara, ale blokada nadal jej slucha.\n\nkazdy blad komendy to tez wskazowka.\n\n- k',
-        '/users/ghost/memo.txt': 'jesli ten node jeszcze kiedykolwiek wstanie,\nnie ufaj mirrorom w /sys.\n\nghost nadal ma prawa do shella.\nprotokol zmieniono po incydencie - sektor 23.\n\njesli slyszysz szum w /cache, odetnij linie.\n\n- k',
+        '/mnt/node/memo.txt': 'jesli to czytasz, wezlem nadal jest aktywny.\n\nzacznij od podstaw: wpisz help.\n\nmoje pliki zostaly w /users/ghost.\nwejdz tam: cd /users/ghost, potem ls, potem cat <plik>.\n\nblokada przyjmuje haslo zlozone z trzech czesci:\n  1. nazwa protokolu\n  2. sektor incydentu\n  3. numer schemy\nkazda z nich jest podpisana w odzyskanych plikach.\nprzeczytaj wszystkie, a sam to poskladasz.\n\nlogowanie: login ghost\nkazdy blad komendy to tez wskazowka.\n\n- k',
+        '/users/ghost/memo.txt': 'jesli ten node jeszcze kiedykolwiek wstanie,\nnie ufaj mirrorom w /sys.\n\nghost nadal ma prawa do shella.\nszczegoly blokady: cat protocol.txt\n\njesli slyszysz szum w /cache, odetnij linie.\n\n- k',
         '/users/ghost/auth.log': '[AUTH_001] 2089-03-01 12:15:33 | ghost   | LOGOWANIE    | SUKCES\n[AUTH_002] 2089-03-05 08:22:11 | ghost   | ODPYTANIE_SEKTORA | CZESCIOWE | sektor:23\n[AUTH_003] 2089-03-12 14:30:22 | ghost   | EDYCJA_KONFIGU | SUKCES | schema:v11\n[AUTH_004] 2089-03-15 04:23:12 | system  | BLOKADA      | AKTYWNA | incydent:sektor_23\n[AUTH_005] 2089-03-15 04:23:16 | unknown | LOGOWANIE    | ODMOWA  | slad:wypalony\n[AUTH_006] 2089-03-15 04:23:20 | unknown | LOGOWANIE    | ODMOWA  | zrodlo:brak',
-        '/users/ghost/sectors.map': 'STATUS SEKTOROW\n\n23 :: ZABLOKOWANY [czarna kwarantanna]\n11 :: PRZEKIEROWANO SCHEME LEGACY\nNET :: ZDEGRADOWANY [przebicie echa]\nCACHE :: NIESTABILNY [slady szczatkowe]\nARCHIVE :: CZESCIOWY [brak zapieczetowanych blokow]',
-        '/users/ghost/protocol.txt': 'protokol zmieniono po incydencie - sektor 23.\nlegacy schema v11 nadal aktywna.\n\nnie uzywaj ponownie starej frazy dostepu.',
-        '/users/ghost/session.log': 'SLAD SESJI\n\noperator: ghost\nschema autoryzacji: legacy_v11\nsektor protokolu: 23\nflaga odzyskiwania: wlaczona\nproces cienia: nierozwiazany\nostatni heartbeat: 2089-03-15 04:23:11'
+        '/users/ghost/sectors.map': 'STATUS SEKTOROW\n\nSEKTOR INCYDENTU: 23 [czarna kwarantanna]\n23 :: ZABLOKOWANY\n11 :: PRZEKIEROWANO SCHEME LEGACY\nNET :: ZDEGRADOWANY [przebicie echa]\nCACHE :: NIESTABILNY [slady szczatkowe]\nARCHIVE :: CZESCIOWY [brak zapieczetowanych blokow]',
+        '/users/ghost/protocol.txt': 'PROTOKOL BLOKADY\n\nNAZWA PROTOKOLU : protocol\nSEKTOR INCYDENTU: patrz sectors.map\nNUMER SCHEMY    : patrz session.log\n\nskladnia frazy legacy:\n  <nazwa>_<sektor>@<schema>\n\nschema wpisujesz jako sam numer, bez litery v.\nbez spacji, same male litery.\n\nblokada nadal slucha legacy schemy.',
+        '/users/ghost/session.log': 'SLAD SESJI\n\noperator: ghost\nschema autoryzacji: legacy_v11\nNUMER SCHEMY: 11\nsektor protokolu: 23\nflaga odzyskiwania: wlaczona\nproces cienia: nierozwiazany\nostatni heartbeat: 2089-03-15 04:23:11'
       };
 
       const commands = ['help', 'ls', 'cd', 'pwd', 'cat', 'clear', 'login', 'logout', 'hint', 'lang', 'show', 'whoami', 'echo', 'date'];
