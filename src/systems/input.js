@@ -62,7 +62,9 @@ export function bindInput() {
     }
 
     if ((event.key === 'e' || event.key === 'E') && !event.repeat) {
-      if (!isTerminalOverlayOpen()) {
+      const typingInField = event.target instanceof HTMLElement
+        && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.isContentEditable);
+      if (!isTerminalOverlayOpen() && !typingInField && !G.menuActive) {
         event.preventDefault();
         interactWithNearestDoor();
         return;
