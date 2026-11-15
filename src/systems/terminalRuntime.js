@@ -1554,7 +1554,7 @@ function runBreach(args) {
     launchNetworkBreach();
     addTrace(3.1, 'breach');
     pushTerminalLine('BREACH LINK ARMED -> MAIN NODE ONLINE', 'ok');
-    pushTerminalLine('next: crack ice', 'dim');
+    pushTerminalLine('next: upload creds, then use crack', 'dim');
     return;
   }
 
@@ -2401,15 +2401,12 @@ function runHelp(args) {
     pushTerminalLine('STEP 1: connect node_main (alias: connect node main)', 'dim');
     pushTerminalLine('STEP 2: breach node main (alias: breach node_main / breach main node)', 'dim');
     pushTerminalLine('this starts MAIN_BREACH mode. then use commands below:', 'dim');
-    pushTerminalLine('crack ice            : break firewall.ice and open lock stage', 'dim');
-    pushTerminalLine('probe lock           : scan auth.lock state, low risk info action', 'dim');
     pushTerminalLine('inject bypass        : force bypass on lock, high trace cost', 'dim');
-    pushTerminalLine('upload creds         : upload shard credentials to satisfy lock', 'dim');
-    pushTerminalLine('upload payload slot_a: upload payload to slot A', 'dim');
-    pushTerminalLine('upload payload slot_b: upload payload to slot B', 'dim');
-    pushTerminalLine('upload payload slot_c: upload payload to slot C (final)', 'dim');
+    pushTerminalLine('upload creds         : upload shard credentials to satisfy lock (starts ICE)', 'dim');
+    pushTerminalLine('use <action> / ba 1-4: fire breach actions at ICE until ICE HP is 20 or less', 'dim');
+    pushTerminalLine('core                 : finish main node once ICE is at 20 HP or less', 'dim');
     pushTerminalLine('abort breach         : safe exit from breach mode, keeps progress', 'dim');
-    pushTerminalLine('after breach: elevator unlock -> elevator up/down if needed', 'dim');
+    pushTerminalLine('after breach: elevator up/down (no unlock needed)', 'dim');
     pushTerminalLine('rule: if trace is too hot, use abort breach and reset tempo.', 'dim');
     return;
   }
@@ -2433,7 +2430,7 @@ function runHelp(args) {
 function runTutorial() {
   pushTerminalLine('TERMINAL TUTORIAL', 'ok');
   pushTerminalLine('the world does not pause. hack fast and leave.', 'dim');
-  pushTerminalLine('door tutorial:', 'dim');
+  pushTerminalLine('door tutorial (then press E at the door):', 'dim');
   pushTerminalLine('scan local', 'dim');
   pushTerminalLine('connect panel_1', 'dim');
   pushTerminalLine('unlock', 'dim');
@@ -2441,7 +2438,7 @@ function runTutorial() {
   pushTerminalLine('camera tutorial:', 'dim');
   pushTerminalLine('scan local', 'dim');
   pushTerminalLine('connect cam_0', 'dim');
-  pushTerminalLine('feed blind or feed loop', 'dim');
+  pushTerminalLine('inject loop or disable', 'dim');
   pushTerminalLine('disconnect', 'dim');
   pushTerminalLine('guard flow: connect guard_0 -> set friendly / override / disable', 'dim');
   pushTerminalLine('technician flow: connect tech_0 -> set friendly / override / disable', 'dim');
@@ -2453,12 +2450,11 @@ function runTutorial() {
   pushTerminalLine('1) prep creds on side nodes: connect node_side_# -> breach firewall -> dump creds', 'dim');
   pushTerminalLine('2) connect to main: connect node_main (also works: connect node main)', 'dim');
   pushTerminalLine('3) start breach mode: breach node main (also: breach node_main / breach main node)', 'dim');
-  pushTerminalLine('4) break ICE: crack ice', 'dim');
-  pushTerminalLine('5) check lock status: probe lock', 'dim');
-  pushTerminalLine('6) satisfy lock: upload creds (or inject bypass if you must force it)', 'dim');
-  pushTerminalLine('7) upload payloads: upload payload slot_a -> slot_b -> slot_c', 'dim');
-  pushTerminalLine('8) if trace is too high: abort breach (safe exit, progress is kept)', 'dim');
-  pushTerminalLine('9) after success: elevator unlock -> elevator up/down', 'dim');
+  pushTerminalLine('4) satisfy lock: upload creds (or inject bypass if you must force it; this starts ICE)', 'dim');
+  pushTerminalLine('5) break ICE: use crack (or ba 1-4) until ICE HP is 20 or less', 'dim');
+  pushTerminalLine('6) finish: core', 'dim');
+  pushTerminalLine('7) if trace is too high: abort breach (safe exit, progress is kept)', 'dim');
+  pushTerminalLine('8) after success: elevator up/down (no unlock needed)', 'dim');
   pushTerminalLine("need examples later? use help guards / help technicians / help terminals / help mainterm", 'dim');
 }
 
@@ -2494,8 +2490,9 @@ function pushConnectedHelp(target) {
   }
 
   if (target.type === 'mainterm') {
-    pushTerminalLine('scp breach.sh     : upload main payload', 'dim');
-    pushTerminalLine('source breach.sh  : execute breach (mission objective)', 'dim');
+    pushTerminalLine('upload creds      : satisfy the lock (starts ICE)', 'dim');
+    pushTerminalLine('use crack / ba 1  : break ICE until HP is 20 or less', 'dim');
+    pushTerminalLine('core              : finish the main node', 'dim');
     return;
   }
 
@@ -2533,7 +2530,7 @@ function pushConnectedCommandHint(target) {
   }
 
   if (target.type === 'mainterm') {
-    pushTerminalLine('main uplink ready. commands: scp breach.sh -> source breach.sh', 'dim');
+    pushTerminalLine('main uplink ready. commands: upload creds -> use crack -> core', 'dim');
     return;
   }
 

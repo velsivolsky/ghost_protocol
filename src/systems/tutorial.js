@@ -170,7 +170,7 @@ function getTutorialRecoveryHint(commandId, args, step) {
 	}
 
 	if (step === 14) {
-		return 'Najpierw zrób kontrolowany fail na node_main bez creds. Wtedy pokażemy poprawną ścieżkę.';
+		return 'Polacz sie z node_main i wykonaj inject relay. Terminal jest zablokowany bez shardu.';
 	}
 
 	if (step === 15) {
@@ -189,7 +189,7 @@ function getTutorialRecoveryHint(commandId, args, step) {
 	}
 
 	if (step === 18) {
-		return 'Wroc na node_main i wykonaj pelny hack: scp breach.sh -> source breach.sh.';
+		return 'Wroc na node_main: connect node_main, upload creds, potem use crack (albo ba 1), az ICE spadnie do 20 HP, na koncu core.';
 	}
 
 	if (step === 19) {
@@ -470,7 +470,7 @@ function getTutorialStepContent(step) {
 	if (step === 4) {
 		return {
 			title: 'OPEN A DOOR',
-			body: 'Zamkniete drzwi otwierasz przez panel. Uzyj: connect panel_1 -> unlock -> disconnect.',
+			body: 'Zamkniete drzwi otwierasz przez panel. Uzyj: connect panel_1 -> unlock -> disconnect. Potem otworz drzwi klawiszem E.',
 			hint: 'Alternatywa: connect door_1 -> unlock.',
 			log: 'Tutorial: drzwi odblokowane.',
 		};
@@ -560,8 +560,8 @@ function getTutorialStepContent(step) {
 	if (step === 14) {
 		return {
 			title: 'MAIN NODE // CONTROLLED FAIL',
-			body: 'Polacz z node_main i sproboj akcji bez creds (np. inject relay albo scp breach.sh bez sharda).',
-			hint: 'To ma byc kontrolowana porazka edukacyjna przed zdobyciem shardu.',
+			body: 'Polacz sie z node_main i wykonaj inject relay. Main terminal jest zablokowany, bo brakuje auth shardu z side node.',
+			hint: 'To kontrolowana porazka. Shard zdobedziesz na node_side_1 w kolejnych krokach.',
 			log: 'Tutorial: fail-case na main node zaliczony.',
 		};
 	}
@@ -596,8 +596,8 @@ function getTutorialStepContent(step) {
 	if (step === 18) {
 		return {
 			title: 'MAIN NODE // HACK',
-			body: 'Wroc na node_main i wykonaj pelny hack: connect node_main -> scp breach.sh -> source breach.sh.',
-			hint: 'To jest finalny cel runa. Auth shard z node_side_1 juz jest w systemie.',
+			body: 'Wroc na node_main: connect node_main -> upload creds -> use crack (albo ba 1), az ICE spadnie do 20 HP -> core.',
+			hint: 'ICE zbijasz akcjami breach: use <akcja> albo ba <1-4>. Core przejdzie dopiero przy ICE HP 20 lub mniej.',
 			log: 'Tutorial: main node zhakowany.',
 		};
 	}

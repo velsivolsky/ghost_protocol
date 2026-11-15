@@ -92,7 +92,7 @@ function getTutorialMissionText() {
   }
 
   if (step === 14) {
-    return 'TUTORIAL | Main node fail-case: <b>connect node_main</b> i sproboj akcji bez creds';
+    return 'TUTORIAL | Main node fail-case: <b>connect node_main</b> -> <b>inject relay</b> (zablokowany bez shardu)';
   }
 
   if (step === 15) {
@@ -108,7 +108,7 @@ function getTutorialMissionText() {
   }
 
   if (step === 18) {
-    return 'TUTORIAL | Main node hack: <b>connect node_main</b> -> <b>scp breach.sh</b> -> <b>source breach.sh</b>';
+    return 'TUTORIAL | Main node hack: <b>connect node_main</b> -> <b>upload creds</b> -> <b>use crack</b> (ICE do 20 HP) -> <b>core</b>';
   }
 
   if (step === 19) {
