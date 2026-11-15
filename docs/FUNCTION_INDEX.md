@@ -1,8 +1,8 @@
 # Indeks funkcji — Ghost Protocol
 
-Stan: gałąź `main`, commit `d62fb56` (PR #2 „wskazowka_hasla” scalony). Zakres: deklaracje najwyższego poziomu (`function`, `class`, `const ... => `) w `src/`, plus funkcje skryptu wbudowanego w `index.html`. Funkcje zagnieżdżone i handlery inline pominięte.
+Stan: gałąź `main`, commit `e0b55e7` (PR #4 „wskazowka_hasla” scalony, PR #5 łagodniejsze wykrywanie w kolejce). Zakres: deklaracje najwyższego poziomu (`function`, `class`, `const ... => `) w `src/`, plus funkcje skryptu wbudowanego w `index.html`. Funkcje zagnieżdżone i handlery inline pominięte.
 
-Numery linii są zweryfikowane skryptem względem `d62fb56`. Po zmianach w kodzie trzeba je odświeżyć. Zmiany w `index.html` od `fd666f6` dotyczą tylko treści intro i szeptów (sekcja na końcu).
+Numery linii dla funkcji z `src/` zweryfikowane względem `e0b55e7`; wpisy z sekcji skryptu `index.html` zachowują numery sprzed zmian. Po zmianach w kodzie trzeba je odświeżyć. Zmiany w `index.html` od `fd666f6` dotyczą tylko treści intro i szeptów (sekcja na końcu).
 
 Legenda: **Eksport** = `export` z modułu.
 
@@ -142,7 +142,7 @@ Legenda: **Eksport** = `export` z modułu.
 
 | Funkcja | Linia | Eksport | Opis |
 |---|---|---|---|
-| `createCamera` | 1 | tak | Tworzy kamerę |
+| `createCamera` | 3 | tak | Tworzy kamerę |
 
 ### src/entities/distraction.js
 
@@ -155,19 +155,19 @@ Legenda: **Eksport** = `export` z modułu.
 
 | Funkcja | Linia | Eksport | Opis |
 |---|---|---|---|
-| `createDrone` | 7 | tak | Tworzy drona |
-| `tickDrone` | 29 | tak | Tik drona |
+| `createDrone` | 8 | tak | Tworzy drona |
+| `tickDrone` | 30 | tak | Tik drona |
 
 ### src/entities/guard.js
 
 | Funkcja | Linia | Eksport | Opis |
 |---|---|---|---|
-| `generatePatrolWaypoints` | 10 |  | Generuje punkty patrolu strażnika |
-| `createGuard` | 40 | tak | Tworzy strażnika |
-| `tickGuard` | 73 | tak | Tik strażnika (patrol, wykrycie, alarm) |
-| `isPlayerHiddenFromGuard` | 254 |  | Czy gracz ukryty przed strażnikiem |
-| `moveWithPath` | 262 |  | Ruch po ścieżce |
-| `canOccupyNpc` | 304 |  | Czy NPC może stanąć na kaflu |
+| `generatePatrolWaypoints` | 11 |  | Generuje punkty patrolu strażnika |
+| `createGuard` | 41 | tak | Tworzy strażnika |
+| `tickGuard` | 74 | tak | Tik strażnika (patrol, wykrycie, alarm) |
+| `isPlayerHiddenFromGuard` | 255 |  | Czy gracz ukryty przed strażnikiem |
+| `moveWithPath` | 263 |  | Ruch po ścieżce |
+| `canOccupyNpc` | 305 |  | Czy NPC może stanąć na kaflu |
 
 ### src/entities/player.js
 
@@ -179,14 +179,14 @@ Legenda: **Eksport** = `export` z modułu.
 
 | Funkcja | Linia | Eksport | Opis |
 |---|---|---|---|
-| `createTechnician` | 23 | tak | Tworzy technika |
-| `updateTechAnim` | 51 | tak | Aktualizuje animację technika |
-| `getTechAnimState` | 79 |  | Stan animacji technika |
-| `tickTechnician` | 100 | tak | Tik technika (wezwanie do kamer) |
-| `moveToward` | 241 |  | Ruch technika w stronę celu |
-| `canOccupyNpc` | 279 |  | Czy technik może stanąć na kaflu |
-| `updateSpotting` | 293 |  | Wykrywanie gracza przez technika |
-| `isPlayerHiddenFromTech` | 332 |  | Czy gracz ukryty przed technikiem |
+| `createTechnician` | 24 | tak | Tworzy technika |
+| `updateTechAnim` | 52 | tak | Aktualizuje animację technika |
+| `getTechAnimState` | 80 |  | Stan animacji technika |
+| `tickTechnician` | 101 | tak | Tik technika (wezwanie do kamer) |
+| `moveToward` | 242 |  | Ruch technika w stronę celu |
+| `canOccupyNpc` | 280 |  | Czy technik może stanąć na kaflu |
+| `updateSpotting` | 294 |  | Wykrywanie gracza przez technika |
+| `isPlayerHiddenFromTech` | 333 |  | Czy gracz ukryty przed technikiem |
 
 ### src/systems/audio.js
 
@@ -870,26 +870,26 @@ Legenda: **Eksport** = `export` z modułu.
 
 | Funkcja | Linia | Eksport | Opis |
 |---|---|---|---|
-| `spawnEntities` | 31 | tak | Spawnuje encje na piętrze |
-| `getSpawnRooms` | 73 |  | Wybiera pokoje spawnu (bez wejścia) |
-| `update` | 93 | tak | Główna pętla logiki (tik) |
-| `checkDeadGuardDiscovery` | 261 |  | Wykrycie martwego strażnika przez innych |
-| `canWatcherSeeBody` | 281 |  | Czy strażnik widzi ciało |
-| `canCameraSeeBody` | 302 |  | Czy kamera widzi ciało |
-| `updatePlayerMovement` | 333 |  | Ruch gracza z WASD (z kolizjami) |
-| `canOccupy` | 394 |  | Czy gracz zmieści się na danej pozycji |
-| `collidesWithWallBuffer` | 425 |  | Kolizja z buforem ściany |
-| `collidesWithClosedDoor` | 453 |  | Kolizja z zamkniętymi drzwiami |
-| `checkExfiltration` | 482 |  | Sprawdza ekstrakcję przy wejściu (faza 2) |
-| `checkStairTransition` | 511 |  | Przejście schodami między piętrami |
-| `findEntryTile` | 566 |  | Pozycja wejścia na piętro |
-| `resolveSafeSpawnPoint` | 586 |  | Bezpieczny punkt startowy na piętrze |
-| `isSpawnPointSafe` | 602 |  | Czy punkt nie koliduje z przeszkodami |
-| `findNearestSafeSpawnTile` | 610 |  | Najbliższy bezpieczny kafel |
-| `updateCameras` | 636 |  | Aktualizacja widzenia kamer i alarmów |
-| `triggerGuardInvestigation` | 678 |  | Wysłanie strażnika na miejsce gracza |
-| `triggerGuardInvestigationAt` | 682 | tak | Wysłanie strażnika na współrzędne |
-| `isPlayerHiddenFrom` | 708 |  | Czy gracz jest ukryty przed obserwatorem |
+| `spawnEntities` | 32 | tak | Spawnuje encje na piętrze |
+| `getSpawnRooms` | 74 |  | Wybiera pokoje spawnu (bez wejścia) |
+| `update` | 94 | tak | Główna pętla logiki (tik) |
+| `checkDeadGuardDiscovery` | 262 |  | Wykrycie martwego strażnika przez innych |
+| `canWatcherSeeBody` | 282 |  | Czy strażnik widzi ciało |
+| `canCameraSeeBody` | 303 |  | Czy kamera widzi ciało |
+| `updatePlayerMovement` | 334 |  | Ruch gracza z WASD (z kolizjami) |
+| `canOccupy` | 395 |  | Czy gracz zmieści się na danej pozycji |
+| `collidesWithWallBuffer` | 426 |  | Kolizja z buforem ściany |
+| `collidesWithClosedDoor` | 454 |  | Kolizja z zamkniętymi drzwiami |
+| `checkExfiltration` | 483 |  | Sprawdza ekstrakcję przy wejściu (faza 2) |
+| `checkStairTransition` | 512 |  | Przejście schodami między piętrami |
+| `findEntryTile` | 567 |  | Pozycja wejścia na piętro |
+| `resolveSafeSpawnPoint` | 587 |  | Bezpieczny punkt startowy na piętrze |
+| `isSpawnPointSafe` | 603 |  | Czy punkt nie koliduje z przeszkodami |
+| `findNearestSafeSpawnTile` | 611 |  | Najbliższy bezpieczny kafel |
+| `updateCameras` | 637 |  | Aktualizacja widzenia kamer i alarmów |
+| `triggerGuardInvestigation` | 692 |  | Wysłanie strażnika na miejsce gracza |
+| `triggerGuardInvestigationAt` | 696 | tak | Wysłanie strażnika na współrzędne |
+| `isPlayerHiddenFrom` | 722 |  | Czy gracz jest ukryty przed obserwatorem |
 
 ### src/systems/visibility.js
 

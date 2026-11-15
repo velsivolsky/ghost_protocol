@@ -1,6 +1,6 @@
 # Ghost Protocol — przegląd gry (dla agentów)
 
-Stan: gałąź `main`, commit `d62fb56` (po PR #2). Opis oparty na kodzie w `src/`. Szczegóły funkcji: `docs/FUNCTION_INDEX.md`.
+Stan: gałąź `main`, commit `e0b55e7` (po PR #4). Opis oparty na kodzie w `src/`. Szczegóły funkcji: `docs/FUNCTION_INDEX.md`.
 
 ## Cel gry
 - Gracz wciela się w operatora (ghost), który infiltruje sieć i wykrada dane, nie dając się wykryć.
@@ -13,6 +13,7 @@ Stan: gałąź `main`, commit `d62fb56` (po PR #2). Opis oparty na kodzie w `src
 - **Hackowanie świata**: kliknięcie celu otwiera menu kontekstowe (`hacking.js`). Akcje zużywają BW (bandwidth), np. oślep kamerę, przeciąż strażnika, przejmij drona.
 - **Realtime terminal** (TAB): komendy działają w czasie rzeczywistym, z kolejką, cooldownem i paskiem heat (`terminalRuntime.js`, `terminalCommands.js` — rejestr i koszty, `terminalParser.js` — parsowanie). Przykłady id: `connect`, `scan_local`, `scan_network`, `inject`, `open`, `close`, `elevator_up`, `elevator_down`, `feed_show_cone`, `game_options`.
 - **Trace**: rosnący ślad z progami `TRACE_TIERS` = 25/50/75/100 i kontrmiarami (`traceSystem.js`, `core/balance.js`).
+- **Wykrywanie**: wszystkie progi i tempo (stożek, wykrycie, alarm, zasięg, czas pościgu) są w `DETECTION_BALANCE` (`core/balance.js`).
 - **Nacisk paranoi**: pasywny wzrost trace z fragmentów danych o wysokiej paranoi (`dataFragments.js::getParanoiaPressure`, `update.js`).
 - **Breach terminala głównego**: wieloetapowy minigame z CPU/RAM i black ICE (`networkBreach.js`, `BREACH_BALANCE` w `core/balance.js`). Komendy: `brute_auth`, `upload_creds`, `use_breach`, `core`, `fs_ls`, `fs_cd`, `fs_cat`, `fs_scp`, `transfer_funds`, `abort_breach`.
 - **Quickhacki**: okno czasowe ze zwolnionym czasem, sloty loadoutu, koszt heat (`quickhacks.js`).
@@ -40,7 +41,7 @@ Stan: gałąź `main`, commit `d62fb56` (po PR #2). Opis oparty na kodzie w `src
 | Koszty i balans breach | `core/balance.js` (`BREACH_BALANCE`), `networkBreach.js` | Nowa komenda breach: `networkBreach.js` + rejestr w `terminalCommands.js` |
 | Nowa komenda terminala (realtime) | `terminalCommands.js` (rejestr), `terminalRuntime.js` (handler), `terminalParser.js` | Koszty heat/bw w rejestrze |
 | Quickhacki | `quickhacks.js` (definicje, sloty, okno), `hacking.js` (użycie w świecie) | |
-| Strażnicy i wykrywanie | `entities/guard.js`, `visibility.js`, `update.js` | `isPlayerHiddenFromGuard` |
+| Strażnicy i wykrywanie | `core/balance.js` (`DETECTION_BALANCE`), `entities/guard.js`, `visibility.js`, `update.js` | `isPlayerHiddenFromGuard`, `updateCameras` |
 | Technicy i kamery | `entities/technician.js`, `entities/camera.js`, `hacking.js` (`revealCamCone`) | |
 | Drony | `entities/drone.js`, `hacking.js::hijackDrone` | |
 | Generacja map i pięter | `world/generator.js`, `core/state.js` (`initFloorState`) | Dead drop i plan dostępu w `generateMultiFloorMap` |
