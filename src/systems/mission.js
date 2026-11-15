@@ -248,6 +248,22 @@ export function win() {
   G.dom.successOverlay.classList.add('show');
 }
 
+// Escape hatch: lets the player end a run that can no longer be completed.
+// Counts as a failure, same as exfil while compromised.
+export function abandonRun() {
+  if (G.dead || G.cleared) {
+    return;
+  }
+
+  G.cleared = true;
+  const failTick = resolveRunFailure();
+  log('RUN PRZERWANY przez operatora. Status: ABANDONED.', 'bad');
+  if (failTick.lostOperator) {
+    log(`Operator utracony: ${failTick.lostOperator.alias}`, 'bad');
+  }
+  G.dom.failOverlay.classList.add('show');
+}
+
 export function killPlayer(reason) {
   if (!G.dead && !G.cleared) {
     const failTick = resolveRunFailure();

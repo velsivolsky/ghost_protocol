@@ -3,7 +3,7 @@ import { patchTileFlat, setWallRenderQuality } from './render.js';
 import { G, byType } from '../core/state.js';
 import { clamp, dst } from '../utils/math.js';
 import { log, rebuildList, refreshHUD } from './ui.js';
-import { updateMissionText } from './mission.js';
+import { abandonRun, updateMissionText } from './mission.js';
 import { autocompleteTerminalCommand, parseTerminalCommand } from './terminalParser.js';
 import { getCommandDef, COMMAND_REGISTRY } from './terminalCommands.js';
 import { addTrace, activateGhostWindow, activateTraceMask, softenTrace } from './traceSystem.js';
@@ -33,6 +33,7 @@ const TERMINAL_HEAT_CRASH_DURATION_MS = 4200;
 const COMMAND_HEAT_COSTS = {
   connect: 5,
   disconnect: 0,
+  abandon_run: 0,
   scan_local: 4,
   scan_network: 6,
   download_map: 8,
@@ -566,7 +567,7 @@ function queueTerminalCommand(rawInput) {
   if (
     G.terminalRuntime.commandContext === 'main_breach' &&
     def.requiredContext !== 'main_breach' &&
-    !['disconnect', 'game_options', 'options_save', 'options_cancel'].includes(parsed.commandId)
+    !['disconnect', 'abandon_run', 'game_options', 'options_save', 'options_cancel'].includes(parsed.commandId)
   ) {
     pushTerminalLine('ACCESS DENIED. PROVIDE AUTHENTICATION CREDENTIALS', 'bad');
     return;
@@ -662,6 +663,12 @@ function resolveCommandExecution(pending) {
   if (commandId === 'tutorial') {
     runTutorial();
     noteTutorialCommand('tutorial', args);
+    return;
+  }
+
+  if (commandId === 'abandon_run') {
+    closeTerminalOverlay();
+    abandonRun();
     return;
   }
 
@@ -1325,7 +1332,11 @@ function requireSideTerminalTarget(target, commandLabel, options = {}) {
     return null;
   }
 
-  if (target.ref?.used && !allowConsumed) {
+  // A node still holding an unextracted auth shard must stay reachable,
+  // even if a world-menu option already consumed it (otherwise the run can softlock).
+  const holdsOpenShard = !!target.ref?.authShard && !target.ref?.authShardExtracted;
+
+  if (target.ref?.used && !allowConsumed && !holdsOpenShard) {
     pushTerminalLine(`terminal already consumed: ${target.id}`, 'warn');
     return null;
   }
