@@ -415,6 +415,16 @@ export const COMMAND_REGISTRY = [
     help: 'tutorial - show beginner hacking walkthrough',
   },
   {
+    id: 'abandon_run',
+    phrase: 'abandon run',
+    aliases: ['abandon', 'quit run'],
+    namespace: 'system',
+    requiredContext: 'none',
+    noise: 0,
+    latencyMs: 50,
+    help: 'abandon run - give up this run now (counts as failure, returns to hub)',
+  },
+  {
     id: 'game_options',
     phrase: 'game_options',
     aliases: ['options', 'game options'],

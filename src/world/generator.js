@@ -2,7 +2,103 @@ import { MAP_H, MAP_W, TILE_TYPES, WALL_ATLAS_VARIANTS } from '../core/constants
 import { G } from '../core/state.js';
 
 // Multi-floor map generator
+const ROUTE_CHECK_ATTEMPTS = 25;
+
+// Regenerates the run until the route is solvable: entrance -> stairs on every
+// floor, and a path to the main terminal on the top floor. Without this, a run
+// can be generated where the objective or the exit is unreachable (softlock).
 export function generateMultiFloorMap(floorCount = 3) {
+  let floors = null;
+
+  for (let attempt = 0; attempt < ROUTE_CHECK_ATTEMPTS; attempt += 1) {
+    floors = buildMultiFloorMap(floorCount);
+
+    if (isRunRouteSolvable(floors)) {
+      return floors;
+    }
+  }
+
+  console.warn('[generator] no fully solvable route found, using last attempt');
+  return floors;
+}
+
+// Tiles that block the player. Closed doors count as passable because each one
+// can be opened from its wall panel (unlock -> open).
+function isRouteBlocking(tile) {
+  return tile === undefined || tile === TILE_TYPES.WALL || tile === TILE_TYPES.WALL_TERMINAL;
+}
+
+function reachableTilesFrom(map, start) {
+  const seen = new Set();
+  const queue = [start];
+  seen.add(`${start.x},${start.y}`);
+
+  while (queue.length) {
+    const cur = queue.shift();
+    const neighbours = [
+      { x: cur.x + 1, y: cur.y },
+      { x: cur.x - 1, y: cur.y },
+      { x: cur.x, y: cur.y + 1 },
+      { x: cur.x, y: cur.y - 1 },
+    ];
+
+    for (const next of neighbours) {
+      const key = `${next.x},${next.y}`;
+      if (seen.has(key) || isRouteBlocking(map.tiles[next.y]?.[next.x])) {
+        continue;
+      }
+      seen.add(key);
+      queue.push(next);
+    }
+  }
+
+  return seen;
+}
+
+function isRunRouteSolvable(floors) {
+  if (!floors?.length || !floors[0].entrance) {
+    return false;
+  }
+
+  let start = floors[0].entrance;
+
+  for (let i = 0; i < floors.length; i += 1) {
+    const map = floors[i];
+    const reach = reachableTilesFrom(map, start);
+    const isTop = i === floors.length - 1;
+
+    if (isTop) {
+      const term = map.mainTerminal;
+      if (!term) {
+        return false;
+      }
+      // Terminal is interacted with from an adjacent tile.
+      const adjacent = [
+        `${term.x + 1},${term.y}`,
+        `${term.x - 1},${term.y}`,
+        `${term.x},${term.y + 1}`,
+        `${term.x},${term.y - 1}`,
+      ];
+      return adjacent.some((key) => reach.has(key));
+    }
+
+    const up = map.stairsUp;
+    if (!up || !reach.has(`${up.x},${up.y}`)) {
+      return false;
+    }
+
+    // Arrival on the next floor is at its stairsDown (see checkStairTransition).
+    const nextDown = floors[i + 1].stairsDown;
+    if (!nextDown) {
+      return false;
+    }
+    start = { x: nextDown.x, y: nextDown.y };
+  }
+
+  return false;
+}
+
+function buildMultiFloorMap(floorCount) {
 	// Each floor is a separate map object
 	const floors = [];
 	for (let i = 0; i < floorCount; ++i) {
