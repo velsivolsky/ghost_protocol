@@ -1,5 +1,6 @@
 import { G, byType } from '../core/state.js';
 import { TILE_TYPES } from '../core/constants.js';
+import { DETECTION_BALANCE } from '../core/balance.js';
 import { clamp, dst } from '../utils/math.js';
 import { killPlayer } from '../systems/mission.js';
 import { floatMsg, log, rebuildList } from '../systems/ui.js';
@@ -67,7 +68,7 @@ export function tickDrone(drone, dt) {
   drone.y = drone.ocy + Math.sin(drone.angle) * drone.radius;
 
   if (!playerHidden && dst(drone, player) < 2 && !G.blackout) {
-    G.alert = clamp(G.alert + dt * 0.012);
+    G.alert = clamp(G.alert + dt * DETECTION_BALANCE.droneAlertPerMs);
 
     if (dst(drone, player) < 1) {
       player.hp = Math.max(0, player.hp - dt * 0.025);
