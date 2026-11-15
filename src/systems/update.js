@@ -6,6 +6,7 @@ import {
 	TILE_TYPES,
 } from '../core/constants.js';
 import { G, byType, initFloorState } from '../core/state.js';
+import { DETECTION_BALANCE } from '../core/balance.js';
 import { createCamera } from '../entities/camera.js';
 import { createDistraction, tickDistraction } from '../entities/distraction.js';
 import { tickDrone, createDrone } from '../entities/drone.js';
@@ -641,11 +642,14 @@ function updateCameras(dt) {
 
 		camera.facing += camera.rotDir;
 
+		// seenMs liczy, jak długo kamera nieprzerwanie widzi gracza (reset przy każdym "nie widzi")
 		if (dst(camera, G.P) > camera.range) {
+			camera.seenMs = 0;
 			continue;
 		}
 
 		if (isPlayerHiddenFrom(camera)) {
+			camera.seenMs = 0;
 			continue;
 		}
 
@@ -659,6 +663,7 @@ function updateCameras(dt) {
 				return tile === TILE_TYPES.WALL || tile === TILE_TYPES.DOOR_CLOSED || tile === TILE_TYPES.WALL_TERMINAL;
 			},
 		)) {
+			camera.seenMs = 0;
 			continue;
 		}
 
@@ -668,10 +673,19 @@ function updateCameras(dt) {
 		while (diff > Math.PI) diff -= Math.PI * 2;
 		while (diff < -Math.PI) diff += Math.PI * 2;
 
-		if (Math.abs(diff) < camera.fov / 2) {
-			G.alert = clamp(G.alert + dt * 0.016);
-			triggerGuardInvestigation();
+		if (Math.abs(diff) >= camera.fov / 2) {
+			camera.seenMs = 0;
+			continue;
 		}
+
+		camera.seenMs = (camera.seenMs || 0) + dt;
+
+		if (camera.seenMs < DETECTION_BALANCE.cameraDwellMs) {
+			continue;
+		}
+
+		G.alert = clamp(G.alert + dt * DETECTION_BALANCE.cameraAlertPerMs);
+		triggerGuardInvestigation();
 	}
 }
 

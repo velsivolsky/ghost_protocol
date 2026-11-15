@@ -1,5 +1,6 @@
 import { G, byType } from '../core/state.js';
 import { TILE_TYPES } from '../core/constants.js';
+import { DETECTION_BALANCE } from '../core/balance.js';
 import { clamp, dst } from '../utils/math.js';
 import { floatMsg, log, rebuildList } from '../systems/ui.js';
 import { lineOfSight } from '../utils/los.js';
@@ -297,7 +298,7 @@ function updateSpotting(technician, dt) {
 		return;
 	}
 
-	if (dst(technician, G.P) > 6.2) {
+	if (dst(technician, G.P) > DETECTION_BALANCE.techRange) {
 		return;
 	}
 
@@ -320,7 +321,7 @@ function updateSpotting(technician, dt) {
 		return;
 	}
 
-	G.alert = clamp(G.alert + dt * 0.01);
+	G.alert = clamp(G.alert + dt * DETECTION_BALANCE.techAlertPerMs);
 
 	if (technician.spotCooldown <= 0) {
 		technician.spotCooldown = 1500;

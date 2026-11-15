@@ -1,4 +1,5 @@
 import { G } from '../core/state.js';
+import { DETECTION_BALANCE } from '../core/balance.js';
 import { PLAYER_SPEED, TILE_TYPES } from '../core/constants.js';
 import { clamp, dst } from '../utils/math.js';
 import { canWalk } from '../world/map.js';
@@ -111,7 +112,7 @@ export function tickGuard(guard, dt) {
 
   const seesPlayer =
     distance < 7 &&
-    Math.abs(diff) < 0.8 &&
+    Math.abs(diff) < DETECTION_BALANCE.guardConeHalfAngle &&
     guard.opticsOfflineT <= 0 &&
     !guard.hacked &&
     !G.blackout &&
@@ -137,10 +138,10 @@ export function tickGuard(guard, dt) {
       log('Strażnik coś zauważył', 'w');
     }
 
-    guard.detect = (guard.detect || 0) + dt * 0.001;
-    G.alert = clamp(G.alert + dt * 0.015);
+    guard.detect = (guard.detect || 0) + dt * DETECTION_BALANCE.guardDetectPerMs;
+    G.alert = clamp(G.alert + dt * DETECTION_BALANCE.guardAlertPerMs);
 
-    if (guard.detect > 1.4 && distance < 5) {
+    if (guard.detect > DETECTION_BALANCE.guardChaseDetect && distance < 5) {
       guard.state = 'chase';
       guard.searchTimer = 0;
       log('Strażnik namierza cel!', 'w');
@@ -165,7 +166,7 @@ export function tickGuard(guard, dt) {
     if (guard.state === 'chase') {
       guard.searchTimer = (guard.searchTimer || 0) + dt;
 
-      if (guard.searchTimer > 1800) {
+      if (guard.searchTimer > DETECTION_BALANCE.guardChaseLoseMs) {
         guard.state = 'search';
         guard.searchTimer = 0;
       }
@@ -198,7 +199,7 @@ export function tickGuard(guard, dt) {
       guard.searchTimer = (guard.searchTimer || 0) + dt;
     }
 
-    if (seesPlayer) {
+    if (seesPlayer && guard.detect > DETECTION_BALANCE.guardReacquireDetect) {
       guard.state = 'chase';
       guard.searchTimer = 0;
     }
@@ -209,7 +210,7 @@ export function tickGuard(guard, dt) {
   if (guard.state === 'suspicious' && guard.lastSeen) {
     moveWithPath(guard, guard.lastSeen.x, guard.lastSeen.y, searchSpeed * 0.85);
 
-    if (seesPlayer && guard.detect > 1.4 && distance < 3.2) {
+    if (seesPlayer && guard.detect > DETECTION_BALANCE.guardChaseDetect && distance < 3.2) {
       guard.state = 'chase';
       guard.searchTimer = 0;
     }

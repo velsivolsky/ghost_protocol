@@ -1,3 +1,5 @@
+import { DETECTION_BALANCE } from '../core/balance.js';
+
 export function createCamera(index, room) {
   return {
     id: `cam${index}`,
@@ -8,7 +10,8 @@ export function createCamera(index, room) {
     showCone: false,
     facing: Math.PI / 2,
     rotDir: (Math.random() > 0.5 ? 1 : -1) * 0.0012,
-    fov: Math.PI / 2.5,
+    fov: DETECTION_BALANCE.cameraFov,
+    seenMs: 0,
     range: 4.5,
     desc: `Kamera #${index}`,
     hackable: true,
